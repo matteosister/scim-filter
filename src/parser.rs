@@ -1,11 +1,12 @@
 use crate::model::Match;
 use crate::ExpressionOperator;
+use nom;
 use nom::branch::alt;
-use nom::bytes::complete::{is_not, tag, take};
+use nom::bytes::complete::{is_not, tag, tag_no_case, take, take_until};
 use nom::character::complete::{alpha1, alphanumeric1, multispace0};
 use nom::combinator::{map_res, recognize};
 use nom::error::ParseError;
-use nom::multi::many0_count;
+use nom::multi::{fold_many0, fold_many1, many0_count, separated_list0};
 use nom::sequence::{delimited, pair, terminated, tuple};
 use nom::{IResult, Parser};
 use std::str::FromStr;
@@ -52,17 +53,45 @@ fn attribute_expression(input: &str) -> IResult<&str, Match> {
 }
 
 fn attribute_expression_present(input: &str) -> IResult<&str, Match> {
-    let (input, attribute) = terminated(ws(attribute_parser), tag("pr"))(input)?;
+    let (input, attribute) = terminated(ws(attribute_parser), tag_no_case("pr"))(input)?;
     Ok((
         input,
         Match::new(attribute, ExpressionOperator::Present, None),
     ))
 }
 
-fn rule(input: &str) -> IResult<&str, Match> {
+fn attribute_operator(input: &str) -> IResult<&str, Match> {
     Ok(alt((attribute_expression, attribute_expression_present))(
         input,
     )?)
+}
+
+fn logical_and_operators(input: &str) -> IResult<&str, Vec<Match>> {
+    let (input, rules) = separated_list0(tag_no_case("and"), ws(attribute_operator))(input)?;
+    Ok((input, rules))
+}
+
+fn logical_or_operators(input: &str) -> IResult<&str, Vec<Match>> {
+    let (input, rules) = separated_list0(tag_no_case("or"), ws(attribute_operator))(input)?;
+    Ok((input, rules))
+}
+
+fn grouping_operators(input: &str) -> IResult<&str, Vec<Match>> {
+    dbg!(input);
+    let (input, rules) = fold_many1(
+        alt((
+            delimited(tag("("), ws(take_until(")")), tag(")")),
+            ws(take_until("(")),
+        )),
+        || vec![],
+        |mut acc, item| {
+            dbg!(&acc, item);
+            acc.push(item);
+            acc
+        },
+    )(input)?;
+    dbg!(rules);
+    Ok((input, vec![]))
 }
 
 #[cfg(test)]
@@ -109,6 +138,7 @@ mod tests {
     }
 
     #[test_case("", ExpressionOperator::Equal, "eq"; "equal")]
+    #[test_case("", ExpressionOperator::Equal, "Eq"; "case insensitive")]
     #[test_case("", ExpressionOperator::NotEqual, "ne"; "not equal")]
     #[test_case("", ExpressionOperator::Contains, "co"; "contains")]
     #[test_case("", ExpressionOperator::LessThan, "lt"; "less than")]
@@ -125,8 +155,65 @@ mod tests {
     #[test_case("", Match::new("test", ExpressionOperator::StartsWith, Some("Te")), "test sw \"Te\""; "starts with")]
     #[test_case("", Match::new("test", ExpressionOperator::Present, None), "test pr"; "present")]
     fn parse_rule_ok(remains: &str, expected: Match, v: &str) {
-        let parsed = rule(v);
+        let parsed = attribute_operator(v);
         assert!(parsed.is_ok());
         assert_eq!((remains, expected), parsed.unwrap());
+    }
+
+    #[test_case(
+        "",
+        vec![
+            Match::new("name", ExpressionOperator::Equal, Some("Test")),
+            Match::new("surname", ExpressionOperator::Equal, Some("Test"))
+        ],
+        "name eq \"Test\" AND surname eq \"Test\"";
+        "simple and"
+    )]
+    #[test_case(
+        "",
+        vec![
+            Match::new("name", ExpressionOperator::Equal, Some("Test")),
+            Match::new("surname", ExpressionOperator::Equal, Some("Test")),
+            Match::new("middleName", ExpressionOperator::Present, None)
+        ],
+        "name eq \"Test\" AND surname eq \"Test\" and middleName PR";
+        "three rules"
+    )]
+    #[test_case(
+        "",
+        vec![
+            Match::new("name", ExpressionOperator::Equal, Some("Test"))
+        ],
+        "name eq \"Test\" ";
+        "single rule"
+    )]
+    fn parse_logical_and_operators_ok(remains: &str, expected: Vec<Match>, v: &str) {
+        let parsed = logical_and_operators(v);
+        assert!(parsed.is_ok());
+        assert_eq!((remains, expected), parsed.unwrap());
+    }
+
+    #[test_case(
+        "",
+        vec![
+            Match::new("name", ExpressionOperator::Equal, Some("Test")),
+            Match::new("surname", ExpressionOperator::Equal, Some("Test"))
+        ],
+        "name eq \"Test\" OR surname eq \"Test\"";
+        "simple and"
+    )]
+    fn parse_logical_or_operators_ok(remains: &str, expected: Vec<Match>, v: &str) {
+        let parsed = logical_or_operators(v);
+        assert!(parsed.is_ok());
+        assert_eq!((remains, expected), parsed.unwrap());
+    }
+
+    #[test]
+    fn parse_grouping_operators_ok() {
+        let parsed = grouping_operators(
+            "userType eq \"Employee\" and (emails co \"example.com\" or emails.value co \"example.org\")",
+        );
+        dbg!(parsed);
+        assert!(false);
     }
 }

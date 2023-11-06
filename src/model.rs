@@ -19,7 +19,7 @@ impl FromStr for ExpressionOperator {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_lowercase().as_str() {
             "eq" => Ok(Self::Equal),
             "ne" => Ok(Self::NotEqual),
             "co" => Ok(Self::Contains),
