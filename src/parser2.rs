@@ -37,6 +37,7 @@ enum Expression<'a> {
 }
 
 fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
+    dbg!("logical_operator", input);
     alt((
         value(LogicalOperator::And, tag_no_case("and")),
         value(LogicalOperator::Or, tag_no_case("or")),
@@ -44,9 +45,10 @@ fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
 }
 
 fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
+    dbg!("attribute_expression", input);
     let (input, (attribute, expression_operator, value)) = tuple((
         ws(parse_attribute),
-        ws(parse_expression_operator),
+        ws(parse_attribute_operator),
         ws(parse_value),
     ))(input)?;
 
@@ -61,6 +63,7 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
 }
 
 fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
+    dbg!("logical_expression", input);
     let (input, (left, logical_operator, right)) =
         tuple((ws(expression), ws(logical_operator), ws(expression)))(input)?;
 
@@ -74,8 +77,15 @@ fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
     ))
 }
 
+fn group_expression(input: &str) -> IResult<&str, LogicalExpression> {
+    dbg!("group_expression", input);
+    delimited(char('('), logical_expression, char(')'))(input)
+}
+
 fn expression(input: &str) -> IResult<&str, Expression> {
+    dbg!("expression", input);
     alt((
+        map(group_expression, Expression::Logical),
         map(attribute_expression, Expression::Attribute),
         map(logical_expression, Expression::Logical),
     ))
@@ -89,7 +99,7 @@ fn parse_attribute(input: &str) -> IResult<&str, &str> {
     ))(input)
 }
 
-fn parse_expression_operator(input: &str) -> IResult<&str, ExpressionOperator> {
+fn parse_attribute_operator(input: &str) -> IResult<&str, ExpressionOperator> {
     map_res(take(2usize), ExpressionOperator::from_str)(input)
 }
 
@@ -167,6 +177,40 @@ mod tests {
                         attribute: "b",
                         expression_operator: ExpressionOperator::Equal,
                         value: Some("test2"),
+                    })),
+                }
+            ),
+            parsed.unwrap()
+        );
+    }
+
+    #[test]
+    fn logical_expression_with_parens() {
+        let parsed = logical_expression(
+            "a eq \"test\" and d ne \"aaa\" and (b eq \"test2\" or c eq \"test3\")",
+        );
+        assert_eq!(
+            (
+                "",
+                LogicalExpression {
+                    left: Box::new(Expression::Attribute(AttributeExpression {
+                        attribute: "a",
+                        expression_operator: ExpressionOperator::Equal,
+                        value: Some("test"),
+                    })),
+                    operator: LogicalOperator::And,
+                    right: Box::new(Expression::Logical(LogicalExpression {
+                        left: Box::new(Expression::Attribute(AttributeExpression {
+                            attribute: "b",
+                            expression_operator: ExpressionOperator::Equal,
+                            value: Some("test2"),
+                        })),
+                        operator: LogicalOperator::Or,
+                        right: Box::new(Expression::Attribute(AttributeExpression {
+                            attribute: "c",
+                            expression_operator: ExpressionOperator::Equal,
+                            value: Some("test3"),
+                        })),
                     })),
                 }
             ),
