@@ -149,4 +149,28 @@ mod tests {
             parsed.unwrap()
         );
     }
+
+    #[test]
+    fn logical_expression_or_test() {
+        let parsed = logical_expression("a eq \"test\" or b eq \"test2\"");
+        assert_eq!(
+            (
+                "",
+                LogicalExpression {
+                    left: Box::new(Expression::Attribute(AttributeExpression {
+                        attribute: "a",
+                        expression_operator: ExpressionOperator::Equal,
+                        value: Some("test"),
+                    })),
+                    operator: LogicalOperator::Or,
+                    right: Box::new(Expression::Attribute(AttributeExpression {
+                        attribute: "b",
+                        expression_operator: ExpressionOperator::Equal,
+                        value: Some("test2"),
+                    })),
+                }
+            ),
+            parsed.unwrap()
+        );
+    }
 }
