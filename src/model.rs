@@ -35,17 +35,16 @@ impl FromStr for ExpressionOperator {
     }
 }
 
-pub enum AttributeOperator {
+pub enum LogicalOperator {
     And,
     Or,
-    Not,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Match<'a> {
     attribute: &'a str,
     expression_operator: ExpressionOperator,
-    value: Option<Box<Value<'a>>>,
+    value: Option<Vec<Value<'a>>>,
 }
 #[derive(Debug, PartialEq)]
 pub enum Value<'a> {
@@ -57,7 +56,7 @@ impl<'a> Match<'a> {
     pub fn new(
         attribute: &'a str,
         expression_operator: ExpressionOperator,
-        value: Option<Box<Value<'a>>>,
+        value: Option<Vec<Value<'a>>>,
     ) -> Self {
         Self {
             attribute,

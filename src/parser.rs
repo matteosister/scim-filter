@@ -13,10 +13,6 @@ use nom::sequence::{delimited, pair, terminated, tuple};
 use nom::{IResult, Parser};
 use std::str::FromStr;
 
-pub fn parse<'a>(_filter: &'a str) -> Vec<Match<'a>> {
-    vec![]
-}
-
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
 /// trailing whitespace, returning the output of `inner`.
 fn ws<'a, F, O, E: ParseError<&'a str>>(inner: F) -> impl Parser<&'a str, O, E>
@@ -60,7 +56,7 @@ fn parse_attribute_expression(input: &str) -> IResult<&str, Match> {
 
     Ok((
         input,
-        Match::new(attribute, expression_operator, Some(Box::new(value))),
+        Match::new(attribute, expression_operator, Some(vec![value])),
     ))
 }
 
@@ -80,19 +76,24 @@ fn parse_attribute_operator(input: &str) -> IResult<&str, Match> {
 }
 
 fn parse_logical_and_operators(input: &str) -> IResult<&str, Vec<&str>> {
-    let (input, rules) = separated_list0(tag_no_case("and"), ws(take_until("AND")))(input)?;
+    let (input, rules) = separated_list0(tag_no_case("and"), ws(take_until("and")))(input)?;
     Ok((input, rules))
 }
 
 fn parse_logical_or_operators(input: &str) -> IResult<&str, Vec<&str>> {
-    let (input, rules) = separated_list0(tag_no_case("or"), ws(take_until("OR")))(input)?;
+    let (input, rules) = separated_list0(tag_no_case("or"), ws(take_until("or")))(input)?;
     Ok((input, rules))
 }
 
 fn parse_groups(input: &str) -> IResult<&str, Vec<Match<'_>>> {
-    let (input, res1) = terminated(alphanumeric1, ws(tag_no_case("and")))(input)?;
-    let (input, res2) = delimited(char('('), take_until_unbalanced('(', ')'), char(')'))(input)?;
-    dbg!(res1, res2);
+    dbg!("parse_groups");
+
+    let _res = alt((
+        delimited(char('('), take_until_unbalanced('(', ')'), char(')'))
+            .and_then(parse_attribute_operator),
+        terminated(parse_attribute_operator, ws(tag_no_case("and"))),
+    ))(input);
+
     Ok(("", vec![]))
 }
 
@@ -202,11 +203,11 @@ mod tests {
         assert_eq!((remains, expected), parsed.unwrap());
     }
 
-    #[test_case("", Match::new("userName", ExpressionOperator::Equal, Some(Box::new(Value::String("Test")))), "userName eq \"Test\""; "equal")]
-    #[test_case("", Match::new("userName", ExpressionOperator::Equal, Some(Box::new(Value::String("Test")))), "userName  eq \"Test\" "; "equal with spaces")]
-    #[test_case("", Match::new("userName", ExpressionOperator::NotEqual, Some(Box::new(Value::String("Test")))), "userName ne \"Test\""; "not equal")]
-    #[test_case("", Match::new("test", ExpressionOperator::Contains, Some(Box::new(Value::String("Test")))), "test co \"Test\""; "contains")]
-    #[test_case("", Match::new("test", ExpressionOperator::StartsWith, Some(Box::new(Value::String("Te")))), "test sw \"Te\""; "starts with")]
+    #[test_case("", Match::new("userName", ExpressionOperator::Equal, Some(vec![Value::String("Test")])), "userName eq \"Test\""; "equal")]
+    #[test_case("", Match::new("userName", ExpressionOperator::Equal, Some(vec![Value::String("Test")])), "userName  eq \"Test\" "; "equal with spaces")]
+    #[test_case("", Match::new("userName", ExpressionOperator::NotEqual, Some(vec![Value::String("Test")])), "userName ne \"Test\""; "not equal")]
+    #[test_case("", Match::new("test", ExpressionOperator::Contains, Some(vec![Value::String("Test")])), "test co \"Test\""; "contains")]
+    #[test_case("", Match::new("test", ExpressionOperator::StartsWith, Some(vec![Value::String("Te")])), "test sw \"Te\""; "starts with")]
     #[test_case("", Match::new("test", ExpressionOperator::Present, None), "test pr"; "present")]
     fn parse_rule_ok(remains: &str, expected: Match, v: &str) {
         let parsed = parse_attribute_operator(v);
@@ -258,5 +259,11 @@ mod tests {
         let parsed = parse_logical_or_operators(v);
         assert!(parsed.is_ok());
         assert_eq!((remains, expected), parsed.unwrap());
+    }
+
+    #[test]
+    fn parse_grouping_operators_test() {
+        let _ = parse_groups("a and (b or c)");
+        assert!(false);
     }
 }
