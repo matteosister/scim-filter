@@ -42,22 +42,27 @@ pub enum AttributeOperator {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Match {
-    attribute: String,
+pub struct Match<'a> {
+    attribute: &'a str,
     expression_operator: ExpressionOperator,
-    value: Option<String>,
+    value: Option<Box<Value<'a>>>,
+}
+#[derive(Debug, PartialEq)]
+pub enum Value<'a> {
+    String(&'a str),
+    Submatch(Match<'a>),
 }
 
-impl Match {
+impl<'a> Match<'a> {
     pub fn new(
-        attribute: &str,
+        attribute: &'a str,
         expression_operator: ExpressionOperator,
-        value: Option<&str>,
+        value: Option<Box<Value<'a>>>,
     ) -> Self {
         Self {
-            attribute: attribute.to_string(),
+            attribute,
             expression_operator,
-            value: value.map(|v| v.to_string()),
+            value,
         }
     }
 }
