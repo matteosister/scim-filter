@@ -4,14 +4,14 @@ use crate::parser::LogicalOperator::*;
 
 fn gen_attribute_expression<'a>(
     attribute: &'a str,
-    expression_operator: ExpressionOperatorComparison,
+    expression_operator_comparison: ExpressionOperatorComparison,
     value: &'a str,
 ) -> Expression<'a> {
     Expression::Attribute(AttributeExpression::Comparison(
         AttributeExpressionComparison {
             attribute,
-            expression_operator: ExpressionOperator::Comparison(expression_operator),
-            value: Some(value),
+            expression_operator: expression_operator_comparison,
+            value,
         },
     ))
 }

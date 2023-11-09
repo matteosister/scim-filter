@@ -3,7 +3,7 @@ use std::str::FromStr;
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take};
 use nom::character::complete::{alpha1, alphanumeric1, char, multispace0};
-use nom::combinator::{map, map_res, opt, recognize};
+use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::error::ParseError;
 use nom::multi::many0_count;
 use nom::sequence::{delimited, pair, tuple};
@@ -21,35 +21,46 @@ pub(crate) fn filter_parser<'a>(input: &'a str) -> Result<Expression<'a>, Error>
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Expression<'a> {
+pub(crate) enum Expression<'a> {
     Attribute(AttributeExpression<'a>),
     Logical(LogicalExpression<'a>),
     Group(GroupExpression<'a>),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum AttributeExpression<'a> {
+pub(crate) enum AttributeExpression<'a> {
     Comparison(AttributeExpressionComparison<'a>),
     Present(&'a str),
 }
 
+impl<'a> AttributeExpression<'a> {
+    pub fn attribute_name(&self) -> &str {
+        match self {
+            AttributeExpression::Comparison(AttributeExpressionComparison {
+                attribute, ..
+            }) => attribute,
+            AttributeExpression::Present(attribute) => attribute,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
-pub struct AttributeExpressionComparison<'a> {
-    pub attribute: &'a str,
-    pub expression_operator: ExpressionOperator,
+pub(crate) struct AttributeExpressionComparison<'a> {
+    pub(crate) attribute: &'a str,
+    pub(crate) expression_operator: ExpressionOperatorComparison,
     // this is an Option because the present operator do not have any value
-    pub value: Option<&'a str>,
+    pub(crate) value: &'a str,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct LogicalExpression<'a> {
-    left: Box<Expression<'a>>,
-    operator: LogicalOperator,
-    right: Box<Expression<'a>>,
+pub(crate) struct LogicalExpression<'a> {
+    pub(crate) left: Box<Expression<'a>>,
+    pub(crate) operator: LogicalOperator,
+    pub(crate) right: Box<Expression<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct GroupExpression<'a> {
+pub(crate) struct GroupExpression<'a> {
     content: Box<Expression<'a>>,
     operator: Option<LogicalOperator>,
     rest: Option<Box<Expression<'a>>>,
@@ -59,6 +70,16 @@ pub struct GroupExpression<'a> {
 pub enum LogicalOperator {
     And,
     Or,
+}
+
+impl LogicalOperator {
+    pub fn is_or(&self) -> bool {
+        matches!(self, LogicalOperator::Or)
+    }
+
+    pub fn is_and(&self) -> bool {
+        matches!(self, LogicalOperator::And)
+    }
 }
 
 impl FromStr for LogicalOperator {
@@ -133,24 +154,26 @@ fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
 
 fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
     println!("{:.>30}: {}", "attribute_expression", input);
-    let (input, (attribute, expression_operator, value)) = tuple((
-        ws(parse_attribute),
-        ws(parse_attribute_operator),
-        ws(parse_value),
-    ))(input)?;
-
-    let attribute_expression = match expression_operator {
-        ExpressionOperator::Comparison(operator) => {
-            AttributeExpression::Comparison(AttributeExpressionComparison {
-                attribute,
-                expression_operator: ExpressionOperator::Comparison(operator),
-                value,
-            })
-        }
-        ExpressionOperator::Present => AttributeExpression::Present(attribute),
-    };
-
-    Ok((input, attribute_expression))
+    Ok(alt((
+        map(
+            tuple((
+                ws(parse_attribute),
+                ws(parse_comparison_operator),
+                ws(parse_value),
+            )),
+            |(attribute, expression_operator, value)| {
+                AttributeExpression::Comparison(AttributeExpressionComparison {
+                    attribute,
+                    expression_operator,
+                    value,
+                })
+            },
+        ),
+        map(
+            tuple((ws(parse_attribute), ws(parse_present_operator))),
+            |(attribute, _)| AttributeExpression::Present(attribute),
+        ),
+    ))(input)?)
 }
 
 fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
@@ -188,7 +211,7 @@ fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
     ))
 }
 
-pub fn expression(input: &str) -> IResult<&str, Expression> {
+pub(crate) fn expression(input: &str) -> IResult<&str, Expression> {
     println!("{:.>30}: {}", "expression", input);
     alt((
         map(logical_expression, Expression::Logical),
@@ -205,12 +228,16 @@ fn parse_attribute(input: &str) -> IResult<&str, &str> {
     ))(input)
 }
 
-fn parse_attribute_operator(input: &str) -> IResult<&str, ExpressionOperator> {
-    map_res(take(2usize), ExpressionOperator::from_str)(input)
+fn parse_comparison_operator(input: &str) -> IResult<&str, ExpressionOperatorComparison> {
+    map_res(take(2usize), ExpressionOperatorComparison::from_str)(input)
 }
 
-fn parse_value(input: &str) -> IResult<&str, Option<&str>> {
-    opt(delimited(tag("\""), recognize(is_not("\"")), tag("\""))).parse(input)
+fn parse_present_operator(input: &str) -> IResult<&str, bool> {
+    value(true, tag("pr"))(input)
+}
+
+fn parse_value(input: &str) -> IResult<&str, &str> {
+    delimited(tag("\""), recognize(is_not("\"")), tag("\"")).parse(input)
 }
 
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
