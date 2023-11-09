@@ -1,5 +1,5 @@
-mod model;
+mod error;
+mod matcher;
 mod parser;
-mod parser2;
 
-pub use model::*;
+pub use matcher::match_filter;
