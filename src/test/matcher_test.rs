@@ -1,3 +1,5 @@
+use chrono::{DateTime, TimeZone, Utc};
+use rust_decimal_macros::dec;
 use test_case::test_case;
 
 use super::*;
@@ -7,6 +9,8 @@ struct Resource {
     a: String,
     b: String,
     c: String,
+    time: DateTime<Utc>,
+    decimal: rust_decimal::Decimal,
 }
 
 impl Resource {
@@ -15,16 +19,20 @@ impl Resource {
             a: a.to_string(),
             b: b.to_string(),
             c: c.to_string(),
+            time: Utc.with_ymd_and_hms(2021, 1, 1, 10, 0, 0).unwrap(),
+            decimal: rust_decimal::Decimal::new(102, 1),
         }
     }
 }
 
 impl ScimResourceAccessor for Resource {
-    fn get(&self, key: &str) -> Option<&str> {
+    fn get(&self, key: &str) -> Option<Value> {
         match key {
-            "a" => Some(&self.a),
-            "b" => Some(&self.b),
-            "c" => Some(&self.c),
+            "a" => Some(Value::String(&self.a)),
+            "b" => Some(Value::String(&self.b)),
+            "c" => Some(Value::String(&self.c)),
+            "time" => Some(Value::DateTime(self.time.into())),
+            "decimal" => Some(Value::Decimal(dec![10.2])),
             _ => None,
         }
     }
@@ -43,8 +51,16 @@ fn example_resources() -> Vec<Resource> {
 #[test_case("c ew \"st3\"", example_resources(); "one resource do match with correct ends with")]
 #[test_case("c ew \"stX\"", vec![]; "one resource do not match with wrong ends with")]
 #[test_case("c pr", example_resources(); "one resource do match with present")]
-#[test_case("d pr \"stX\"", vec![]; "one resource do not match with present")]
+#[test_case("d pr", vec![]; "one resource do not match with present")]
 #[test_case("a eq \"test1\" or b eq \"test2\"", example_resources(); "two resources with a logical or")]
+#[test_case("a eq \"test1\" and b eq \"test2\"", example_resources(); "two resources with a logical and")]
+#[test_case("a eq \"test1\" or b eq \"test3\"", example_resources(); "two resources with a logical or where one is wrong")]
+#[test_case("A eq \"test1\"", example_resources(); "matches should be case insensitive")]
+#[test_case("(a eq \"test1\" or b eq \"test3\") and c pr", example_resources(); "complex filter 1")]
+#[test_case("a eq \"test1\" and b eq \"test2\" and (c eq \"wrong1\" or c eq \"wrong2\")", vec![]; "complex filter 2")]
+#[test_case("time gt \"2022-01-01T10:10:10Z\"", vec![]; "filter with date")]
+#[test_case("time gt \"2020-01-01T10:10:10Z\"", example_resources(); "filter with date that should match")]
+#[test_case("decimal gt 9.1", example_resources(); "filter with decimal")]
 fn matcher_test(filter: &str, expected: Vec<Resource>) {
     let resources = example_resources();
     let res = match_filter(filter, resources);

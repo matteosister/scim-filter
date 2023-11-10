@@ -1,13 +1,15 @@
 use std::str::FromStr;
 
+use chrono::FixedOffset;
 use nom::branch::alt;
-use nom::bytes::complete::{is_not, tag, tag_no_case, take};
-use nom::character::complete::{alpha1, alphanumeric1, char, multispace0};
+use nom::bytes::complete::{is_not, tag, tag_no_case, take, take_while};
+use nom::character::complete::{alpha1, alphanumeric1, char, i64, multispace0};
 use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::error::ParseError;
 use nom::multi::many0_count;
 use nom::sequence::{delimited, pair, tuple};
 use nom::{Finish, IResult, Parser};
+use rust_decimal::Decimal as RustDecimal;
 
 use crate::error::Error;
 
@@ -15,8 +17,13 @@ use crate::error::Error;
 #[path = "test/parser_test.rs"]
 mod parser_test;
 
-pub(crate) fn filter_parser<'a>(input: &'a str) -> Result<Expression<'a>, Error> {
-    let (input, expression) = expression(input).map_err(|e| e.to_owned()).finish()?;
+/// main API entrance for this module, given a filter string,
+/// it generates an Result with a possible parsed Expression struct
+pub(crate) fn filter_parser(input: &str) -> Result<Expression, Error> {
+    let (remain, expression) = expression(input).map_err(|e| e.to_owned()).finish()?;
+    if remain != "" {
+        return Err(Error::InvalidFilter(input.to_owned(), remain.to_owned()));
+    }
     Ok(expression)
 }
 
@@ -34,13 +41,14 @@ pub(crate) enum AttributeExpression<'a> {
 }
 
 impl<'a> AttributeExpression<'a> {
-    pub fn attribute_name(&self) -> &str {
+    pub fn attribute_name(&self) -> String {
         match self {
             AttributeExpression::Comparison(AttributeExpressionComparison {
                 attribute, ..
             }) => attribute,
             AttributeExpression::Present(attribute) => attribute,
         }
+        .to_lowercase()
     }
 }
 
@@ -49,7 +57,17 @@ pub(crate) struct AttributeExpressionComparison<'a> {
     pub(crate) attribute: &'a str,
     pub(crate) expression_operator: ExpressionOperatorComparison,
     // this is an Option because the present operator do not have any value
-    pub(crate) value: &'a str,
+    pub(crate) value: Value<'a>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Value<'a> {
+    String(&'a str),
+    Boolean(bool),
+    DateTime(chrono::DateTime<FixedOffset>),
+    Decimal(RustDecimal),
+    Integer(i64),
+    Binary(&'a str),
 }
 
 #[derive(Debug, PartialEq)]
@@ -61,13 +79,13 @@ pub(crate) struct LogicalExpression<'a> {
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct GroupExpression<'a> {
-    content: Box<Expression<'a>>,
-    operator: Option<LogicalOperator>,
-    rest: Option<Box<Expression<'a>>>,
+    pub(crate) content: Box<Expression<'a>>,
+    pub(crate) operator: Option<LogicalOperator>,
+    pub(crate) rest: Option<Box<Expression<'a>>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum LogicalOperator {
+pub(crate) enum LogicalOperator {
     And,
     Or,
 }
@@ -236,8 +254,29 @@ fn parse_present_operator(input: &str) -> IResult<&str, bool> {
     value(true, tag("pr"))(input)
 }
 
-fn parse_value(input: &str) -> IResult<&str, &str> {
-    delimited(tag("\""), recognize(is_not("\"")), tag("\"")).parse(input)
+fn parse_value(input: &str) -> IResult<&str, Value> {
+    alt((
+        map(
+            map_res(
+                delimited(tag("\""), recognize(is_not("\"")), tag("\"")),
+                chrono::DateTime::parse_from_rfc3339,
+            ),
+            Value::DateTime,
+        ),
+        map(
+            map_res(
+                take_while(|c: char| c.is_digit(10) || c == '.'),
+                RustDecimal::from_str_exact,
+            ),
+            Value::Decimal,
+        ),
+        map(i64, Value::Integer),
+        map(
+            delimited(tag("\""), recognize(is_not("\"")), tag("\"")),
+            Value::String,
+        ),
+    ))
+    .parse(input)
 }
 
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and

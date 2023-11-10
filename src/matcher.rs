@@ -1,15 +1,12 @@
 use crate::error::Error;
-use crate::parser::{
-    filter_parser, AttributeExpression, AttributeExpressionComparison, Expression,
-    ExpressionOperatorComparison, LogicalExpression,
-};
+use crate::parser::*;
 
 #[cfg(test)]
 #[path = "test/matcher_test.rs"]
 mod matcher_test;
 
 pub trait ScimResourceAccessor {
-    fn get(&self, key: &str) -> Option<&str>;
+    fn get(&self, key: &str) -> Option<Value>;
 }
 
 pub fn match_filter<'a, T>(input: &str, resources: Vec<T>) -> Result<Vec<T>, Error>
@@ -28,14 +25,21 @@ impl<'a> Expression<'a> {
         match self {
             Expression::Attribute(attribute_expression) => attribute_expression.do_match(resource),
             Expression::Logical(logical_expression) => logical_expression.do_match(resource),
-            Expression::Group(_) => false,
+            Expression::Group(group_expression) => group_expression.do_match(resource),
         }
     }
 }
 
 impl<'a> AttributeExpression<'a> {
     pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> bool {
-        let resource_value = resource.get(self.attribute_name());
+        println!("{:.>30}: {:?}", "matching attribute expression", self);
+        println!(
+            "{:.>30}: {}",
+            "normalised attribute name",
+            self.attribute_name()
+        );
+        let resource_value = resource.get(&self.attribute_name());
+        println!("{:.>30}: {:?}", "resource value", resource_value);
         match self {
             AttributeExpression::Comparison(AttributeExpressionComparison {
                 expression_operator,
@@ -44,17 +48,7 @@ impl<'a> AttributeExpression<'a> {
             }) => match resource_value {
                 // if the resource do not contains the filtered value, we always match
                 None => true,
-                Some(res_value) => match expression_operator {
-                    ExpressionOperatorComparison::Equal => *value == res_value,
-                    ExpressionOperatorComparison::NotEqual => *value != res_value,
-                    ExpressionOperatorComparison::Contains => res_value.contains(value),
-                    ExpressionOperatorComparison::StartsWith => res_value.starts_with(value),
-                    ExpressionOperatorComparison::EndsWith => res_value.ends_with(value),
-                    ExpressionOperatorComparison::GreaterThan => todo!(),
-                    ExpressionOperatorComparison::GreaterThanOrEqual => todo!(),
-                    ExpressionOperatorComparison::LessThan => todo!(),
-                    ExpressionOperatorComparison::LessThanOrEqual => todo!(),
-                },
+                Some(res_value) => value.do_match(expression_operator, &res_value),
             },
             AttributeExpression::Present(_) => resource_value.is_some(),
         }
@@ -63,11 +57,84 @@ impl<'a> AttributeExpression<'a> {
 
 impl<'a> LogicalExpression<'a> {
     pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> bool {
-        //let resource_value = resource.get(self.attribute_name());
         let left_match = self.left.do_match(resource);
         if left_match && self.operator.is_or() {
-            return true;
+            true
+        } else if left_match && self.operator.is_and() {
+            self.right.do_match(resource)
+        } else {
+            false
         }
-        false
+    }
+}
+
+impl<'a> GroupExpression<'a> {
+    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> bool {
+        let content_match = self.content.do_match(resource);
+        match (content_match, &self.operator) {
+            (false, _) => false,
+            (true, None) => true,
+            (true, Some(logical_operator)) => {
+                if logical_operator.is_or() {
+                    true
+                } else {
+                    match &self.rest {
+                        None => true,
+                        Some(expression) => expression.do_match(resource),
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'a> Value<'a> {
+    pub fn do_match(&self, operator: &ExpressionOperatorComparison, resource_value: &Self) -> bool {
+        println!(
+            "{:.>30}: {:?} {:?} {:?}",
+            "comparison", self, operator, resource_value
+        );
+        match operator {
+            ExpressionOperatorComparison::Equal => self == resource_value,
+            ExpressionOperatorComparison::NotEqual => self != resource_value,
+            ExpressionOperatorComparison::Contains => resource_value.contains(self),
+            ExpressionOperatorComparison::StartsWith => resource_value.starts_with(self),
+            ExpressionOperatorComparison::EndsWith => resource_value.ends_with(self),
+            ExpressionOperatorComparison::GreaterThan => resource_value.greater_than(self),
+            ExpressionOperatorComparison::GreaterThanOrEqual => false,
+            ExpressionOperatorComparison::LessThan => false,
+            ExpressionOperatorComparison::LessThanOrEqual => false,
+        }
+    }
+
+    fn contains(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => a.contains(b),
+            _ => false,
+        }
+    }
+
+    fn starts_with(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => a.starts_with(b),
+            _ => false,
+        }
+    }
+
+    fn ends_with(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => a.ends_with(b),
+            _ => false,
+        }
+    }
+
+    fn greater_than(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => a > b,
+            (Value::Integer(a), Value::Integer(b)) => a > b,
+            (Value::DateTime(a), Value::DateTime(b)) => a > b,
+            (Value::Decimal(a), Value::Decimal(b)) => a > b,
+            _ => false,
+        }
     }
 }
