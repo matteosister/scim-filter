@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::error::Error::InvalidFilter;
 use crate::parser::*;
 
 #[cfg(test)]
@@ -14,14 +15,20 @@ where
     T: ScimResourceAccessor,
 {
     let filter_expression = filter_parser(input)?;
-    Ok(resources
-        .into_iter()
-        .filter(|res| filter_expression.do_match(res))
-        .collect())
+    resources.into_iter().try_fold(vec![], |mut acc, res| {
+        match filter_expression.do_match(&res) {
+            Ok(true) => {
+                acc.push(res);
+                Ok(acc)
+            }
+            Ok(false) => Ok(acc),
+            Err(e) => Err(e),
+        }
+    })
 }
 
 impl<'a> Expression<'a> {
-    fn do_match<T: ScimResourceAccessor>(&self, resource: &T) -> bool {
+    fn do_match<T: ScimResourceAccessor>(&self, resource: &T) -> Result<bool, Error> {
         match self {
             Expression::Attribute(attribute_expression) => attribute_expression.do_match(resource),
             Expression::Logical(logical_expression) => logical_expression.do_match(resource),
@@ -31,7 +38,7 @@ impl<'a> Expression<'a> {
 }
 
 impl<'a> AttributeExpression<'a> {
-    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> bool {
+    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> Result<bool, Error> {
         println!("{:.>30}: {:?}", "matching attribute expression", self);
         println!(
             "{:.>30}: {}",
@@ -47,39 +54,39 @@ impl<'a> AttributeExpression<'a> {
                 ..
             }) => match resource_value {
                 // if the resource do not contains the filtered value, we always match
-                None => true,
+                None => Ok(true),
                 Some(res_value) => value.do_match(expression_operator, &res_value),
             },
-            AttributeExpression::Present(_) => resource_value.is_some(),
+            AttributeExpression::Present(_) => Ok(resource_value.is_some()),
         }
     }
 }
 
 impl<'a> LogicalExpression<'a> {
-    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> bool {
-        let left_match = self.left.do_match(resource);
+    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> Result<bool, Error> {
+        let left_match = self.left.do_match(resource)?;
         if left_match && self.operator.is_or() {
-            true
+            Ok(true)
         } else if left_match && self.operator.is_and() {
             self.right.do_match(resource)
         } else {
-            false
+            Ok(false)
         }
     }
 }
 
 impl<'a> GroupExpression<'a> {
-    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> bool {
-        let content_match = self.content.do_match(resource);
+    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> Result<bool, Error> {
+        let content_match = self.content.do_match(resource)?;
         match (content_match, &self.operator) {
-            (false, _) => false,
-            (true, None) => true,
+            (false, _) => Ok(false),
+            (true, None) => Ok(true),
             (true, Some(logical_operator)) => {
                 if logical_operator.is_or() {
-                    true
+                    Ok(true)
                 } else {
                     match &self.rest {
-                        None => true,
+                        None => Ok(true),
                         Some(expression) => expression.do_match(resource),
                     }
                 }
@@ -89,52 +96,116 @@ impl<'a> GroupExpression<'a> {
 }
 
 impl<'a> Value<'a> {
-    pub fn do_match(&self, operator: &ExpressionOperatorComparison, resource_value: &Self) -> bool {
+    pub fn do_match(
+        &self,
+        operator: &ExpressionOperatorComparison,
+        resource_value: &Self,
+    ) -> Result<bool, Error> {
         println!(
             "{:.>30}: {:?} {:?} {:?}",
             "comparison", self, operator, resource_value
         );
         match operator {
-            ExpressionOperatorComparison::Equal => self == resource_value,
-            ExpressionOperatorComparison::NotEqual => self != resource_value,
+            ExpressionOperatorComparison::Equal => resource_value.equal(self),
+            ExpressionOperatorComparison::NotEqual => resource_value.not_equal(self),
             ExpressionOperatorComparison::Contains => resource_value.contains(self),
             ExpressionOperatorComparison::StartsWith => resource_value.starts_with(self),
             ExpressionOperatorComparison::EndsWith => resource_value.ends_with(self),
             ExpressionOperatorComparison::GreaterThan => resource_value.greater_than(self),
-            ExpressionOperatorComparison::GreaterThanOrEqual => false,
-            ExpressionOperatorComparison::LessThan => false,
-            ExpressionOperatorComparison::LessThanOrEqual => false,
+            ExpressionOperatorComparison::GreaterThanOrEqual => resource_value.greater_equal(self),
+            ExpressionOperatorComparison::LessThan => resource_value.less_then(self),
+            ExpressionOperatorComparison::LessThanOrEqual => resource_value.less_equal(self),
         }
     }
 
-    fn contains(&self, other: &Self) -> bool {
+    fn equal(&self, other: &Self) -> Result<bool, Error> {
         match (self, other) {
-            (Value::String(a), Value::String(b)) => a.contains(b),
-            _ => false,
+            (Value::String(a), Value::String(b)) => Ok(a == b),
+            (Value::Boolean(a), Value::Boolean(b)) => Ok(a == b),
+            (Value::DateTime(a), Value::DateTime(b)) => Ok(a == b),
+            (Value::Number(a), Value::Number(b)) => Ok(a == b),
+            (Value::Binary(a), Value::Binary(b)) => Ok(a == b),
+            _ => Err(InvalidFilter),
         }
     }
 
-    fn starts_with(&self, other: &Self) -> bool {
+    fn not_equal(&self, other: &Self) -> Result<bool, Error> {
         match (self, other) {
-            (Value::String(a), Value::String(b)) => a.starts_with(b),
-            _ => false,
+            (Value::String(a), Value::String(b)) => Ok(a != b),
+            (Value::Boolean(a), Value::Boolean(b)) => Ok(a != b),
+            (Value::DateTime(a), Value::DateTime(b)) => Ok(a != b),
+            (Value::Number(a), Value::Number(b)) => Ok(a != b),
+            (Value::Binary(a), Value::Binary(b)) => Ok(a != b),
+            _ => Err(InvalidFilter),
         }
     }
 
-    fn ends_with(&self, other: &Self) -> bool {
+    fn contains(&self, other: &Self) -> Result<bool, Error> {
         match (self, other) {
-            (Value::String(a), Value::String(b)) => a.ends_with(b),
-            _ => false,
+            (Value::String(a), Value::String(b)) => Ok(a.contains(b)),
+            _ => Err(InvalidFilter),
         }
     }
 
-    fn greater_than(&self, other: &Self) -> bool {
+    fn starts_with(&self, other: &Self) -> Result<bool, Error> {
         match (self, other) {
-            (Value::String(a), Value::String(b)) => a > b,
-            (Value::Integer(a), Value::Integer(b)) => a > b,
-            (Value::DateTime(a), Value::DateTime(b)) => a > b,
-            (Value::Decimal(a), Value::Decimal(b)) => a > b,
-            _ => false,
+            (Value::String(a), Value::String(b)) => Ok(a.starts_with(b)),
+            _ => Err(InvalidFilter),
+        }
+    }
+
+    fn ends_with(&self, other: &Self) -> Result<bool, Error> {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => Ok(a.ends_with(b)),
+            _ => Err(InvalidFilter),
+        }
+    }
+
+    fn greater_than(&self, other: &Self) -> Result<bool, Error> {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => Ok(a > b),
+            (Value::Boolean(_), Value::Boolean(_)) => Err(InvalidFilter),
+            (Value::DateTime(a), Value::DateTime(b)) => Ok(a > b),
+            (Value::Number(a), Value::Number(b)) => Ok(a > b),
+            (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            // in this case the two data types do not match, it's an invalid filter.
+            _ => Err(InvalidFilter),
+        }
+    }
+
+    fn greater_equal(&self, other: &Self) -> Result<bool, Error> {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => Ok(a >= b),
+            (Value::Boolean(_), Value::Boolean(_)) => Err(InvalidFilter),
+            (Value::DateTime(a), Value::DateTime(b)) => Ok(a >= b),
+            (Value::Number(a), Value::Number(b)) => Ok(a >= b),
+            (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            // in this case the two data types do not match, it's an invalid filter.
+            _ => Err(InvalidFilter),
+        }
+    }
+
+    fn less_then(&self, other: &Self) -> Result<bool, Error> {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => Ok(a < b),
+            (Value::Boolean(_), Value::Boolean(_)) => Err(InvalidFilter),
+            (Value::DateTime(a), Value::DateTime(b)) => Ok(a < b),
+            (Value::Number(a), Value::Number(b)) => Ok(a < b),
+            (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            // in this case the two data types do not match, it's an invalid filter.
+            _ => Err(InvalidFilter),
+        }
+    }
+
+    fn less_equal(&self, other: &Self) -> Result<bool, Error> {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => Ok(a <= b),
+            (Value::Boolean(_), Value::Boolean(_)) => Err(InvalidFilter),
+            (Value::DateTime(a), Value::DateTime(b)) => Ok(a <= b),
+            (Value::Number(a), Value::Number(b)) => Ok(a <= b),
+            (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            // in this case the two data types do not match, it's an invalid filter.
+            _ => Err(InvalidFilter),
         }
     }
 }

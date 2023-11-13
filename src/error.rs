@@ -6,7 +6,10 @@ pub enum Error {
     ParserError(#[from] nom::error::Error<String>),
 
     #[error(
-        "the filter has a wrong format, after parsing the input \"{0}\", the part \"{1}\" remain unparsable"
+        "the filter has a wrong format, after parsing the input \"{0}\", the part \"{1}\" remains"
     )]
-    InvalidFilter(String, String),
+    WrongFilterFormat(String, String),
+
+    #[error("The applied filter is invalid")]
+    InvalidFilter,
 }

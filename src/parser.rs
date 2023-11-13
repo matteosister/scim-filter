@@ -3,7 +3,7 @@ use std::str::FromStr;
 use chrono::FixedOffset;
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take, take_while};
-use nom::character::complete::{alpha1, alphanumeric1, char, i64, multispace0};
+use nom::character::complete::{alpha1, alphanumeric1, char, multispace0};
 use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::error::ParseError;
 use nom::multi::many0_count;
@@ -22,7 +22,10 @@ mod parser_test;
 pub(crate) fn filter_parser(input: &str) -> Result<Expression, Error> {
     let (remain, expression) = expression(input).map_err(|e| e.to_owned()).finish()?;
     if remain != "" {
-        return Err(Error::InvalidFilter(input.to_owned(), remain.to_owned()));
+        return Err(Error::WrongFilterFormat(
+            input.to_owned(),
+            remain.to_owned(),
+        ));
     }
     Ok(expression)
 }
@@ -65,8 +68,7 @@ pub enum Value<'a> {
     String(&'a str),
     Boolean(bool),
     DateTime(chrono::DateTime<FixedOffset>),
-    Decimal(RustDecimal),
-    Integer(i64),
+    Number(RustDecimal),
     Binary(&'a str),
 }
 
@@ -268,9 +270,12 @@ fn parse_value(input: &str) -> IResult<&str, Value> {
                 take_while(|c: char| c.is_digit(10) || c == '.'),
                 RustDecimal::from_str_exact,
             ),
-            Value::Decimal,
+            Value::Number,
         ),
-        map(i64, Value::Integer),
+        map(
+            alt((value(true, tag("true")), value(false, tag("false")))),
+            Value::Boolean,
+        ),
         map(
             delimited(tag("\""), recognize(is_not("\"")), tag("\"")),
             Value::String,
