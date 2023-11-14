@@ -1,17 +1,20 @@
+//! Module for the parser functions
+
 use std::str::FromStr;
 
-use chrono::FixedOffset;
+use model::*;
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take, take_while};
 use nom::character::complete::{alpha1, alphanumeric1, char, multispace0};
 use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::error::ParseError;
 use nom::multi::many0_count;
-use nom::sequence::{delimited, pair, tuple};
+use nom::sequence::{delimited, pair, terminated, tuple};
 use nom::{Finish, IResult, Parser};
 use rust_decimal::Decimal as RustDecimal;
 
 use crate::error::Error;
+pub mod model;
 
 #[cfg(test)]
 #[path = "test/parser_test.rs"]
@@ -28,140 +31,6 @@ pub(crate) fn filter_parser(input: &str) -> Result<Expression, Error> {
         ));
     }
     Ok(expression)
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) enum Expression<'a> {
-    Attribute(AttributeExpression<'a>),
-    Logical(LogicalExpression<'a>),
-    Group(GroupExpression<'a>),
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) enum AttributeExpression<'a> {
-    Comparison(AttributeExpressionComparison<'a>),
-    Present(&'a str),
-}
-
-impl<'a> AttributeExpression<'a> {
-    pub fn attribute_name(&self) -> String {
-        match self {
-            AttributeExpression::Comparison(AttributeExpressionComparison {
-                attribute, ..
-            }) => attribute,
-            AttributeExpression::Present(attribute) => attribute,
-        }
-        .to_lowercase()
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) struct AttributeExpressionComparison<'a> {
-    pub(crate) attribute: &'a str,
-    pub(crate) expression_operator: ExpressionOperatorComparison,
-    // this is an Option because the present operator do not have any value
-    pub(crate) value: Value<'a>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Value<'a> {
-    String(&'a str),
-    Boolean(bool),
-    DateTime(chrono::DateTime<FixedOffset>),
-    Number(RustDecimal),
-    Binary(&'a str),
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) struct LogicalExpression<'a> {
-    pub(crate) left: Box<Expression<'a>>,
-    pub(crate) operator: LogicalOperator,
-    pub(crate) right: Box<Expression<'a>>,
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) struct GroupExpression<'a> {
-    pub(crate) content: Box<Expression<'a>>,
-    pub(crate) operator: Option<LogicalOperator>,
-    pub(crate) rest: Option<Box<Expression<'a>>>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub(crate) enum LogicalOperator {
-    And,
-    Or,
-}
-
-impl LogicalOperator {
-    pub fn is_or(&self) -> bool {
-        matches!(self, LogicalOperator::Or)
-    }
-
-    pub fn is_and(&self) -> bool {
-        matches!(self, LogicalOperator::And)
-    }
-}
-
-impl FromStr for LogicalOperator {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "and" => Ok(Self::And),
-            "or" => Ok(Self::Or),
-            _ => Err(()),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ExpressionOperator {
-    Comparison(ExpressionOperatorComparison),
-    Present,
-}
-
-impl FromStr for ExpressionOperator {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "pr" {
-            return Ok(Self::Present);
-        }
-
-        Ok(Self::Comparison(ExpressionOperatorComparison::from_str(s)?))
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ExpressionOperatorComparison {
-    Equal,
-    NotEqual,
-    Contains,
-    StartsWith,
-    EndsWith,
-    GreaterThan,
-    GreaterThanOrEqual,
-    LessThan,
-    LessThanOrEqual,
-}
-
-impl FromStr for ExpressionOperatorComparison {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "eq" => Ok(Self::Equal),
-            "ne" => Ok(Self::NotEqual),
-            "co" => Ok(Self::Contains),
-            "sw" => Ok(Self::StartsWith),
-            "ew" => Ok(Self::EndsWith),
-            "gt" => Ok(Self::GreaterThan),
-            "ge" => Ok(Self::GreaterThanOrEqual),
-            "lt" => Ok(Self::LessThan),
-            "le" => Ok(Self::LessThanOrEqual),
-            _ => Err(format!("{} is not a valid operator", s)),
-        }
-    }
 }
 
 fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
@@ -182,7 +51,7 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
                 ws(parse_value),
             )),
             |(attribute, expression_operator, value)| {
-                AttributeExpression::Comparison(AttributeExpressionComparison {
+                AttributeExpression::Simple(SimpleData {
                     attribute,
                     expression_operator,
                     value,
@@ -190,8 +59,20 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
             },
         ),
         map(
-            tuple((ws(parse_attribute), ws(parse_present_operator))),
-            |(attribute, _)| AttributeExpression::Present(attribute),
+            terminated(ws(parse_attribute), parse_present_operator),
+            |attribute| AttributeExpression::Present(attribute),
+        ),
+        map(
+            tuple((
+                ws(parse_attribute),
+                delimited(char('['), ws(expression), char(']')),
+            )),
+            |(attribute, expression)| {
+                AttributeExpression::Complex(ComplexData {
+                    attribute,
+                    expression: Box::new(expression),
+                })
+            },
         ),
     ))(input)?)
 }

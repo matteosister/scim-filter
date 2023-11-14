@@ -9,9 +9,16 @@ struct Resource {
     a: String,
     b: String,
     c: String,
+    sub_resource: SubResource,
     datetime: DateTime<Utc>,
     decimal: rust_decimal::Decimal,
     bool: bool,
+}
+
+#[derive(Debug, PartialEq)]
+struct SubResource {
+    first: String,
+    second: String,
 }
 
 impl Resource {
@@ -20,6 +27,10 @@ impl Resource {
             a: a.to_string(),
             b: b.to_string(),
             c: c.to_string(),
+            sub_resource: SubResource {
+                first: "test-first".to_string(),
+                second: "test-second".to_string(),
+            },
             datetime: Utc.with_ymd_and_hms(2021, 1, 1, 10, 0, 0).unwrap(),
             decimal: rust_decimal::Decimal::new(102, 1),
             bool: true,
@@ -36,6 +47,8 @@ impl ScimResourceAccessor for Resource {
             "datetime" => Some(Value::DateTime(self.datetime.into())),
             "decimal" => Some(Value::Number(dec![10.2])),
             "bool" => Some(Value::Boolean(self.bool)),
+            "subresource.first" => Some(Value::String(&self.sub_resource.first)),
+            "subresource.second" => Some(Value::String(&self.sub_resource.second)),
             _ => None,
         }
     }
@@ -57,6 +70,8 @@ fn example_resources() -> Vec<Resource> {
 #[test_case("(a eq \"test1\" or b eq \"test3\") and c pr"; "complex filter 1")]
 #[test_case("datetime gt \"2020-01-01T10:10:10Z\""; "filter with date that should match")]
 #[test_case("decimal gt 9.1"; "filter with decimal")]
+#[test_case("a eq \"test1\" and subresource[first co \"test-\" and second co \"test-\"]"; "filter with complex attribute match")]
+#[test_case("a eq \"test1\" and subresource[first sw \"test-\"]"; "filter with complex attribute and one single expression")]
 fn match_all(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);
@@ -71,6 +86,7 @@ fn match_all(filter: &str) {
 #[test_case("d pr"; "one resource do not match with present")]
 #[test_case("a eq \"test1\" and b eq \"test2\" and (c eq \"wrong1\" or c eq \"wrong2\")"; "complex filter 2")]
 #[test_case("datetime gt \"2022-01-01T10:10:10Z\""; "filter with date")]
+#[test_case("a eq \"test1\" and subresource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
 fn match_none(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);

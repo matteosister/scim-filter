@@ -9,13 +9,11 @@ fn gen_attribute_expression<'a>(
     expression_operator_comparison: ExpressionOperatorComparison,
     value: &'a str,
 ) -> Expression<'a> {
-    Expression::Attribute(AttributeExpression::Comparison(
-        AttributeExpressionComparison {
-            attribute,
-            expression_operator: expression_operator_comparison,
-            value: Value::String(value),
-        },
-    ))
+    Expression::Attribute(AttributeExpression::Simple(SimpleData {
+        attribute,
+        expression_operator: expression_operator_comparison,
+        value: Value::String(value),
+    }))
 }
 
 fn gen_attribute_expression_pr(attribute: &str) -> Expression {
@@ -150,6 +148,35 @@ fn nested_parens() {
             operator: None,
             rest: None,
         })),
+        parsed.unwrap()
+    );
+}
+
+#[test]
+fn complex_attributes() {
+    let parsed = filter_parser(
+        "userType eq \"Employee\" and emails[type eq \"work\" and value co \"@example.com\"]",
+    );
+
+    assert_eq!(
+        Expression::Logical(LogicalExpression {
+            left: Box::new(gen_attribute_expression("userType", Equal, "Employee")),
+            operator: LogicalOperator::And,
+            right: Box::new(Expression::Attribute(AttributeExpression::Complex(
+                ComplexData {
+                    attribute: "emails",
+                    expression: Box::new(Expression::Logical(LogicalExpression {
+                        left: Box::new(gen_attribute_expression("type", Equal, "work")),
+                        operator: And,
+                        right: Box::new(gen_attribute_expression(
+                            "value",
+                            Contains,
+                            "@example.com"
+                        )),
+                    })),
+                }
+            ))),
+        }),
         parsed.unwrap()
     );
 }

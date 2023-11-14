@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::error::Error::InvalidFilter;
-use crate::parser::*;
+use crate::parser::{filter_parser, model::*};
 
 #[cfg(test)]
 #[path = "test/matcher_test.rs"]
@@ -16,7 +16,7 @@ where
 {
     let filter_expression = filter_parser(input)?;
     resources.into_iter().try_fold(vec![], |mut acc, res| {
-        match filter_expression.do_match(&res) {
+        match filter_expression.do_match(None, &res) {
             Ok(true) => {
                 acc.push(res);
                 Ok(acc)
@@ -28,47 +28,74 @@ where
 }
 
 impl<'a> Expression<'a> {
-    fn do_match<T: ScimResourceAccessor>(&self, resource: &T) -> Result<bool, Error> {
+    fn do_match<T: ScimResourceAccessor>(
+        &self,
+        prefix: Option<&str>,
+        resource: &T,
+    ) -> Result<bool, Error> {
         match self {
-            Expression::Attribute(attribute_expression) => attribute_expression.do_match(resource),
-            Expression::Logical(logical_expression) => logical_expression.do_match(resource),
-            Expression::Group(group_expression) => group_expression.do_match(resource),
+            Expression::Attribute(attribute_expression) => {
+                attribute_expression.do_match(prefix, resource)
+            }
+            Expression::Logical(logical_expression) => {
+                logical_expression.do_match(prefix, resource)
+            }
+            Expression::Group(group_expression) => group_expression.do_match(prefix, resource),
         }
     }
 }
 
 impl<'a> AttributeExpression<'a> {
-    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> Result<bool, Error> {
+    pub fn do_match(
+        &self,
+        prefix: Option<&str>,
+        resource: &impl ScimResourceAccessor,
+    ) -> Result<bool, Error> {
         println!("{:.>30}: {:?}", "matching attribute expression", self);
-        println!(
-            "{:.>30}: {}",
-            "normalised attribute name",
-            self.attribute_name()
-        );
-        let resource_value = resource.get(&self.attribute_name());
-        println!("{:.>30}: {:?}", "resource value", resource_value);
         match self {
-            AttributeExpression::Comparison(AttributeExpressionComparison {
+            AttributeExpression::Complex(ComplexData {
+                attribute,
+                expression,
+            }) => expression.do_match(Some(attribute), resource),
+            AttributeExpression::Simple(SimpleData {
                 expression_operator,
                 value,
                 ..
-            }) => match resource_value {
+            }) => match resource.get(&self.full_attribute_name(prefix)) {
                 // if the resource do not contains the filtered value, we always match
                 None => Ok(true),
                 Some(res_value) => value.do_match(expression_operator, &res_value),
             },
-            AttributeExpression::Present(_) => Ok(resource_value.is_some()),
+            AttributeExpression::Present(_) => {
+                Ok(resource.get(&self.full_attribute_name(prefix)).is_some())
+            }
+        }
+    }
+
+    fn full_attribute_name(&self, prefix: Option<&str>) -> String {
+        match self {
+            AttributeExpression::Complex(_) => unimplemented!(),
+            AttributeExpression::Simple(SimpleData { attribute, .. }) => prefix
+                .map(|p| format!("{}.{}", p, attribute))
+                .unwrap_or(attribute.to_string()),
+            AttributeExpression::Present(attribute) => prefix
+                .map(|p| format!("{}.{}", p, attribute))
+                .unwrap_or(attribute.to_string()),
         }
     }
 }
 
 impl<'a> LogicalExpression<'a> {
-    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> Result<bool, Error> {
-        let left_match = self.left.do_match(resource)?;
+    pub fn do_match(
+        &self,
+        prefix: Option<&str>,
+        resource: &impl ScimResourceAccessor,
+    ) -> Result<bool, Error> {
+        let left_match = self.left.do_match(prefix, resource)?;
         if left_match && self.operator.is_or() {
             Ok(true)
         } else if left_match && self.operator.is_and() {
-            self.right.do_match(resource)
+            self.right.do_match(prefix, resource)
         } else {
             Ok(false)
         }
@@ -76,8 +103,12 @@ impl<'a> LogicalExpression<'a> {
 }
 
 impl<'a> GroupExpression<'a> {
-    pub fn do_match(&self, resource: &impl ScimResourceAccessor) -> Result<bool, Error> {
-        let content_match = self.content.do_match(resource)?;
+    pub fn do_match(
+        &self,
+        prefix: Option<&str>,
+        resource: &impl ScimResourceAccessor,
+    ) -> Result<bool, Error> {
+        let content_match = self.content.do_match(prefix, resource)?;
         match (content_match, &self.operator) {
             (false, _) => Ok(false),
             (true, None) => Ok(true),
@@ -87,7 +118,7 @@ impl<'a> GroupExpression<'a> {
                 } else {
                     match &self.rest {
                         None => Ok(true),
-                        Some(expression) => expression.do_match(resource),
+                        Some(expression) => expression.do_match(prefix, resource),
                     }
                 }
             }
