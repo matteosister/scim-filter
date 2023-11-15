@@ -22,7 +22,7 @@ mod parser_test;
 
 /// main API entrance for this module, given a filter string,
 /// it generates an Result with a possible parsed Expression struct
-pub(crate) fn filter_parser(input: &str) -> Result<Expression, Error> {
+pub(crate) fn scim_filter_parser(input: &str) -> Result<Expression, Error> {
     let (remain, expression) = expression(input).map_err(|e| e.to_owned()).finish()?;
     if remain != "" {
         return Err(Error::WrongFilterFormat(

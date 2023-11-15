@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::error::Error::InvalidFilter;
-use crate::parser::{filter_parser, model::*};
+use crate::parser::{model::*, scim_filter_parser};
 
 #[cfg(test)]
 #[path = "test/matcher_test.rs"]
@@ -14,7 +14,7 @@ pub fn match_filter<'a, T>(input: &str, resources: Vec<T>) -> Result<Vec<T>, Err
 where
     T: ScimResourceAccessor,
 {
-    let filter_expression = filter_parser(input)?;
+    let filter_expression = scim_filter_parser(input)?;
     resources.into_iter().try_fold(vec![], |mut acc, res| {
         match filter_expression.do_match(None, &res) {
             Ok(true) => {

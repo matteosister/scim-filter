@@ -22,7 +22,7 @@ fn gen_attribute_expression_pr(attribute: &str) -> Expression {
 
 #[test]
 fn attribute_expression_test() {
-    let parsed = filter_parser("a eq \"test\"");
+    let parsed = scim_filter_parser("a eq \"test\"");
     assert_eq!(
         (gen_attribute_expression("a", Equal, "test")),
         parsed.unwrap()
@@ -31,7 +31,7 @@ fn attribute_expression_test() {
 
 #[test]
 fn expression_with_parens_at_the_beginning() {
-    let parsed = filter_parser("(a eq \"test\" or b pr) and c pr");
+    let parsed = scim_filter_parser("(a eq \"test\" or b pr) and c pr");
     assert_eq!(
         (Expression::Group(GroupExpression {
             content: Box::new(Expression::Logical(LogicalExpression {
@@ -48,7 +48,7 @@ fn expression_with_parens_at_the_beginning() {
 
 #[test]
 fn logical_expression_test() {
-    let parsed = filter_parser("a eq \"test\" and b eq \"test2\"");
+    let parsed = scim_filter_parser("a eq \"test\" and b eq \"test2\"");
     assert_eq!(
         (Expression::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
@@ -61,7 +61,7 @@ fn logical_expression_test() {
 
 #[test]
 fn logical_expression_or_test() {
-    let parsed = filter_parser("a eq \"test\" or b eq \"test2\"");
+    let parsed = scim_filter_parser("a eq \"test\" or b eq \"test2\"");
     assert_eq!(
         (Expression::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
@@ -74,7 +74,7 @@ fn logical_expression_or_test() {
 
 #[test]
 fn logical_expression_with_more_than_1_and() {
-    let parsed = filter_parser("a eq \"test\" and b ne \"test2\" and c co \"test3\"");
+    let parsed = scim_filter_parser("a eq \"test\" and b ne \"test2\" and c co \"test3\"");
     assert_eq!(
         (Expression::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
@@ -91,7 +91,7 @@ fn logical_expression_with_more_than_1_and() {
 
 #[test]
 fn logical_expression_with_more_than_2_and_mixed() {
-    let parsed = filter_parser("a eq \"test\" and b ne \"test2\" or c eq \"test3\"");
+    let parsed = scim_filter_parser("a eq \"test\" and b ne \"test2\" or c eq \"test3\"");
     assert_eq!(
         (Expression::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
@@ -108,7 +108,7 @@ fn logical_expression_with_more_than_2_and_mixed() {
 
 #[test]
 fn logical_expression_with_parens() {
-    let parsed = filter_parser("a eq \"test\" and (b ne \"test2\" or c eq \"test3\")");
+    let parsed = scim_filter_parser("a eq \"test\" and (b ne \"test2\" or c eq \"test3\")");
     assert_eq!(
         (Expression::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
@@ -129,7 +129,7 @@ fn logical_expression_with_parens() {
 
 #[test]
 fn nested_parens() {
-    let parsed = filter_parser("(a pr and (b pr or c pr))");
+    let parsed = scim_filter_parser("(a pr and (b pr or c pr))");
     assert_eq!(
         (Expression::Group(GroupExpression {
             content: Box::new(Expression::Logical(LogicalExpression {
@@ -154,7 +154,7 @@ fn nested_parens() {
 
 #[test]
 fn complex_attributes() {
-    let parsed = filter_parser(
+    let parsed = scim_filter_parser(
         "userType eq \"Employee\" and emails[type eq \"work\" and value co \"@example.com\"]",
     );
 
@@ -183,6 +183,6 @@ fn complex_attributes() {
 
 #[test_case("a eq \"test1\" and"; "and without content")]
 fn wrong_query1(input: &str) {
-    let parsed = filter_parser(input);
+    let parsed = scim_filter_parser(input);
     assert!(parsed.is_err());
 }

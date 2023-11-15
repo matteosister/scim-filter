@@ -72,6 +72,7 @@ fn example_resources() -> Vec<Resource> {
 #[test_case("decimal gt 9.1"; "filter with decimal")]
 #[test_case("a eq \"test1\" and subresource[first co \"test-\" and second co \"test-\"]"; "filter with complex attribute match")]
 #[test_case("a eq \"test1\" and subresource[first sw \"test-\"]"; "filter with complex attribute and one single expression")]
+#[test_case("a gt \"tess\""; "GreaterThan on strings")]
 fn match_all(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);
@@ -94,21 +95,27 @@ fn match_none(filter: &str) {
     assert_eq!(Ok(vec![]), res);
 }
 
-#[test_case("a eq true"; "string with boolean")]
-#[test_case("a eq \"2022-01-01T10:10:10Z\""; "string with datetime")]
-#[test_case("a eq 19.2"; "string with decimal")]
-#[test_case("a eq 11"; "string with integer")]
-#[test_case("bool eq \"test\""; "boolean with string")]
-#[test_case("bool eq \"2022-01-01T10:10:10Z\""; "boolean with datetime")]
-#[test_case("bool eq 19.2"; "boolean with decimal")]
-#[test_case("bool eq 11"; "boolean with integer")]
-#[test_case("datetime eq \"test\""; "datetime with string")]
-#[test_case("datetime eq true"; "datetime with boolean")]
-#[test_case("datetime eq 19.2"; "datetime with decimal")]
-#[test_case("datetime eq 11"; "datetime with integer")]
-#[test_case("decimal eq \"test\""; "decimal with string")]
-#[test_case("decimal eq true"; "decimal with boolean")]
-#[test_case("decimal eq \"2022-01-01T10:10:10Z\""; "decimal with datetime")]
+#[test_case("a eq true"; "equals string with boolean")]
+#[test_case("a gt true"; "greater_than string with boolean")]
+#[test_case("a eq \"2022-01-01T10:10:10Z\""; "equals string with datetime")]
+#[test_case("a eq 19.2"; "equals string with decimal")]
+#[test_case("a eq 11"; "equals string with integer")]
+#[test_case("bool eq \"test\""; "equals boolean with string")]
+#[test_case("bool eq \"2022-01-01T10:10:10Z\""; "equals boolean with datetime")]
+#[test_case("bool eq 19.2"; "equals boolean with decimal")]
+#[test_case("bool eq 11"; "equals boolean with integer")]
+#[test_case("bool gt true"; "greater_than on bool")]
+#[test_case("bool ge true"; "greater_than_equal on bool")]
+#[test_case("bool lt true"; "less_than on bool")]
+#[test_case("bool le true"; "less_than_equal on bool")]
+#[test_case("datetime eq \"test\""; "equals datetime with string")]
+#[test_case("datetime eq true"; "equals datetime with boolean")]
+#[test_case("datetime eq 19.2"; "equals datetime with decimal")]
+#[test_case("datetime eq 11"; "equals datetime with integer")]
+#[test_case("decimal eq \"test\""; "equals decimal with string")]
+#[test_case("decimal eq true"; "equals decimal with boolean")]
+#[test_case("decimal eq \"2022-01-01T10:10:10Z\""; "equals decimal with datetime")]
+#[test_case("decimal ew \"test\""; "equals decimal do not work with EndsWith")]
 fn match_invalid_filter(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);
