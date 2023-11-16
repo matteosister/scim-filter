@@ -1,3 +1,12 @@
+use std::fmt::Debug;
+
+use chrono::{DateTime, FixedOffset};
+use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
+use serde::Serialize;
+use serde_json::Number;
+use serde_json::Value as JsonValue;
+
 use crate::error::Error;
 use crate::error::Error::InvalidFilter;
 use crate::parser::{model::*, scim_filter_parser};
@@ -6,19 +15,17 @@ use crate::parser::{model::*, scim_filter_parser};
 #[path = "test/matcher_test.rs"]
 mod matcher_test;
 
-pub trait ScimResourceAccessor {
-    fn get(&self, key: &str) -> Option<Value>;
-}
-
 pub fn match_filter<'a, T>(input: &str, resources: Vec<T>) -> Result<Vec<T>, Error>
 where
-    T: ScimResourceAccessor,
+    T: Serialize,
 {
     let filter_expression = scim_filter_parser(input)?;
-    resources.into_iter().try_fold(vec![], |mut acc, res| {
-        match filter_expression.do_match(None, &res) {
+
+    resources.into_iter().try_fold(vec![], |mut acc, resource| {
+        let resource_value = serde_json::to_value(&resource)?;
+        match filter_expression.do_match(None, resource_value) {
             Ok(true) => {
-                acc.push(res);
+                acc.push(resource);
                 Ok(acc)
             }
             Ok(false) => Ok(acc),
@@ -28,11 +35,11 @@ where
 }
 
 impl<'a> Expression<'a> {
-    fn do_match<T: ScimResourceAccessor>(
-        &self,
-        prefix: Option<&str>,
-        resource: &T,
-    ) -> Result<bool, Error> {
+    fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        println!(
+            "{:.>30}: prefix = {:?}, resource = {:?}",
+            "matching expression", prefix, resource
+        );
         match self {
             Expression::Attribute(attribute_expression) => {
                 attribute_expression.do_match(prefix, resource)
@@ -46,12 +53,11 @@ impl<'a> Expression<'a> {
 }
 
 impl<'a> AttributeExpression<'a> {
-    pub fn do_match(
-        &self,
-        prefix: Option<&str>,
-        resource: &impl ScimResourceAccessor,
-    ) -> Result<bool, Error> {
-        println!("{:.>30}: {:?}", "matching attribute expression", self);
+    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        println!(
+            "{:.>30}: prefix={:?} {:?}",
+            "matching attribute expression", prefix, self
+        );
         match self {
             AttributeExpression::Complex(ComplexData {
                 attribute,
@@ -61,13 +67,17 @@ impl<'a> AttributeExpression<'a> {
                 expression_operator,
                 value,
                 ..
-            }) => match resource.get(&self.full_attribute_name(prefix)) {
-                // if the resource do not contains the filtered value, we always match
-                None => Ok(true),
-                Some(res_value) => value.do_match(expression_operator, &res_value),
-            },
+            }) => {
+                let resource_value = self.get_value(prefix, resource);
+                if resource_value.is_null() {
+                    Ok(true)
+                } else {
+                    value.do_match(expression_operator, &resource_value)
+                }
+            }
             AttributeExpression::Present(_) => {
-                Ok(resource.get(&self.full_attribute_name(prefix)).is_some())
+                let resource_value = self.get_value(prefix, resource);
+                Ok(!resource_value.is_null())
             }
         }
     }
@@ -83,15 +93,46 @@ impl<'a> AttributeExpression<'a> {
                 .unwrap_or(attribute.to_string()),
         }
     }
+
+    fn get_value(&self, prefix: Option<&str>, value: JsonValue) -> JsonValue {
+        /*println!(
+            "{:.>30}: prefix = {:?}, value = {:?}",
+            "get_value", prefix, value
+        );*/
+        let full_attribute_name = self.full_attribute_name(prefix);
+        //println!("{:.>30}: {}", "full_attribute_name", full_attribute_name);
+        let sub_attributes = full_attribute_name.split(".").collect::<Vec<&str>>();
+        println!("{:.>30}: {:?}", "sub_attributes", sub_attributes);
+        sub_attributes
+            .iter()
+            .fold((value, None), |(value, result), attribute_name| {
+                println!(
+                    "{:.>30}: value={:?} result={:?}",
+                    "fold iteration", value, result
+                );
+                match result {
+                    None => {
+                        // first iteration
+                        (
+                            value[attribute_name].clone(),
+                            Some(value[attribute_name].clone()),
+                        )
+                    }
+                    Some(JsonValue::Null) => (value, Some(JsonValue::Null)),
+                    Some(_) => (
+                        value[attribute_name].clone(),
+                        Some(value[attribute_name].clone()),
+                    ),
+                }
+            })
+            .1
+            .unwrap_or_else(|| JsonValue::Null)
+    }
 }
 
 impl<'a> LogicalExpression<'a> {
-    pub fn do_match(
-        &self,
-        prefix: Option<&str>,
-        resource: &impl ScimResourceAccessor,
-    ) -> Result<bool, Error> {
-        let left_match = self.left.do_match(prefix, resource)?;
+    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        let left_match = self.left.do_match(prefix, resource.clone())?;
         if left_match && self.operator.is_or() {
             Ok(true)
         } else if left_match && self.operator.is_and() {
@@ -103,16 +144,11 @@ impl<'a> LogicalExpression<'a> {
 }
 
 impl<'a> GroupExpression<'a> {
-    pub fn do_match(
-        &self,
-        prefix: Option<&str>,
-        resource: &impl ScimResourceAccessor,
-    ) -> Result<bool, Error> {
-        let content_match = if self.not {
-            !self.content.do_match(prefix, resource)?
-        } else {
-            self.content.do_match(prefix, resource)?
-        };
+    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        let mut content_match = self.content.do_match(prefix, resource.clone())?;
+        if self.not {
+            content_match = !content_match;
+        }
         match (content_match, &self.operator) {
             (false, _) => Ok(false),
             (true, None) => Ok(true),
@@ -134,12 +170,13 @@ impl<'a> Value<'a> {
     pub fn do_match(
         &self,
         operator: &ExpressionOperatorComparison,
-        resource_value: &Self,
+        json_value: &'a JsonValue,
     ) -> Result<bool, Error> {
         println!(
             "{:.>30}: {:?} {:?} {:?}",
-            "comparison", self, operator, resource_value
+            "comparison", self, operator, json_value
         );
+        let resource_value = Self::from_json_value(&json_value)?;
         match operator {
             ExpressionOperatorComparison::Equal => resource_value.equal(self),
             ExpressionOperatorComparison::NotEqual => resource_value.not_equal(self),
@@ -150,6 +187,30 @@ impl<'a> Value<'a> {
             ExpressionOperatorComparison::GreaterThanOrEqual => resource_value.greater_equal(self),
             ExpressionOperatorComparison::LessThan => resource_value.less_then(self),
             ExpressionOperatorComparison::LessThanOrEqual => resource_value.less_equal(self),
+        }
+    }
+
+    fn from_json_value(value: &'a JsonValue) -> Result<Self, Error> {
+        match value {
+            JsonValue::Bool(v) => Ok(Self::Boolean(*v)),
+            JsonValue::Number(n) => {
+                if let Some(number) = Self::to_decimal_number(&n) {
+                    return Ok(Self::Number(number));
+                }
+                Err(InvalidFilter)
+            }
+            JsonValue::String(s) => {
+                if let Some(datetime) = Self::to_datetime(&s) {
+                    return Ok(Self::DateTime(datetime));
+                }
+
+                if let Some(d) = Self::to_decimal_string(&s) {
+                    return Ok(Self::Number(d));
+                }
+
+                Ok(Self::String(&s))
+            }
+            _ => Err(InvalidFilter),
         }
     }
 
@@ -190,6 +251,7 @@ impl<'a> Value<'a> {
     }
 
     fn ends_with(&self, other: &Self) -> Result<bool, Error> {
+        println!("{:.>30}: {:?} {:?}", "ends_with", self, other);
         match (self, other) {
             (Value::String(a), Value::String(b)) => Ok(a.ends_with(b)),
             _ => Err(InvalidFilter),
@@ -242,5 +304,27 @@ impl<'a> Value<'a> {
             // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
+    }
+
+    fn to_datetime(str_date: &str) -> Option<DateTime<FixedOffset>> {
+        chrono::DateTime::parse_from_rfc3339(str_date).ok()
+    }
+
+    fn to_decimal_number(n: &Number) -> Option<Decimal> {
+        if n.is_i64() {
+            return Decimal::from_i64(n.as_i64().unwrap());
+        }
+        if n.is_u64() {
+            return Decimal::from_u64(n.as_u64().unwrap());
+        }
+        if n.is_f64() {
+            return Decimal::from_f64(n.as_f64().unwrap());
+        }
+
+        None
+    }
+
+    fn to_decimal_string(n: &str) -> Option<Decimal> {
+        Decimal::from_str_exact(n).ok()
     }
 }
