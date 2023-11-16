@@ -13,7 +13,7 @@ use crate::parser::{model::*, scim_filter_parser};
 #[path = "test/matcher_test.rs"]
 mod matcher_test;
 
-pub fn match_filter<'a, T>(input: &str, resources: Vec<T>) -> Result<Vec<T>, Error>
+pub fn match_filter<T>(input: &str, resources: Vec<T>) -> Result<Vec<T>, Error>
 where
     T: Serialize,
 {
@@ -93,13 +93,8 @@ impl<'a> AttributeExpression<'a> {
     }
 
     fn get_value(&self, prefix: Option<&str>, value: JsonValue) -> JsonValue {
-        /*println!(
-            "{:.>30}: prefix = {:?}, value = {:?}",
-            "get_value", prefix, value
-        );*/
         let full_attribute_name = self.full_attribute_name(prefix);
-        //println!("{:.>30}: {}", "full_attribute_name", full_attribute_name);
-        let sub_attributes = full_attribute_name.split(".").collect::<Vec<&str>>();
+        let sub_attributes = full_attribute_name.split('.').collect::<Vec<&str>>();
         println!("{:.>30}: {:?}", "sub_attributes", sub_attributes);
         sub_attributes
             .iter()
@@ -124,7 +119,7 @@ impl<'a> AttributeExpression<'a> {
                 }
             })
             .1
-            .unwrap_or_else(|| JsonValue::Null)
+            .unwrap_or(JsonValue::Null)
     }
 }
 
@@ -174,7 +169,7 @@ impl<'a> Value<'a> {
             "{:.>30}: {:?} {:?} {:?}",
             "comparison", self, operator, json_value
         );
-        let resource_value = Self::from_json_value(&json_value)?;
+        let resource_value = Self::from_json_value(json_value)?;
         match operator {
             ExpressionOperatorComparison::Equal => resource_value.equal(self),
             ExpressionOperatorComparison::NotEqual => resource_value.not_equal(self),
@@ -192,21 +187,21 @@ impl<'a> Value<'a> {
         match value {
             JsonValue::Bool(v) => Ok(Self::Boolean(*v)),
             JsonValue::Number(n) => {
-                if let Some(number) = Self::to_decimal_number(&n) {
+                if let Some(number) = Self::to_decimal_number(n) {
                     return Ok(Self::Number(number));
                 }
                 Err(InvalidFilter)
             }
             JsonValue::String(s) => {
-                if let Some(datetime) = Self::to_datetime(&s) {
+                if let Some(datetime) = Self::to_datetime(s) {
                     return Ok(Self::DateTime(datetime));
                 }
 
-                if let Some(d) = Self::to_decimal_string(&s) {
+                if let Some(d) = Self::to_decimal_string(s) {
                     return Ok(Self::Number(d));
                 }
 
-                Ok(Self::String(&s))
+                Ok(Self::String(s))
             }
             _ => Err(InvalidFilter),
         }

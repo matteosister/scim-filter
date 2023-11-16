@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error(transparent)]
-    ParserError(#[from] nom::error::Error<String>),
+    Parser(#[from] nom::error::Error<String>),
 
     #[error(transparent)]
     SerializationError(#[from] serde_json::Error),

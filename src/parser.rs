@@ -24,7 +24,7 @@ mod parser_test;
 /// it generates an Result with a possible parsed Expression struct
 pub(crate) fn scim_filter_parser(input: &str) -> Result<Expression, Error> {
     let (remain, expression) = expression(input).map_err(|e| e.to_owned()).finish()?;
-    if remain != "" {
+    if !remain.is_empty() {
         return Err(Error::WrongFilterFormat(
             input.to_owned(),
             remain.to_owned(),
@@ -43,7 +43,7 @@ fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
 
 fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
     println!("{:.>30}: {}", "attribute_expression", input);
-    Ok(alt((
+    alt((
         map(
             tuple((
                 ws(parse_attribute),
@@ -60,7 +60,7 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
         ),
         map(
             terminated(ws(parse_attribute), parse_present_operator),
-            |attribute| AttributeExpression::Present(attribute),
+            AttributeExpression::Present,
         ),
         map(
             tuple((
@@ -74,7 +74,7 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
                 })
             },
         ),
-    ))(input)?)
+    ))(input)
 }
 
 fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
@@ -150,7 +150,7 @@ fn parse_value(input: &str) -> IResult<&str, Value> {
         ),
         map(
             map_res(
-                take_while(|c: char| c.is_digit(10) || c == '.'),
+                take_while(|c: char| c.is_ascii_digit() || c == '.'),
                 RustDecimal::from_str_exact,
             ),
             Value::Number,
