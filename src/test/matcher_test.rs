@@ -12,6 +12,7 @@ struct Resource {
     sub_resource: SubResource,
     datetime: DateTime<Utc>,
     decimal: rust_decimal::Decimal,
+    number: u32,
     bool: bool,
 }
 
@@ -33,6 +34,7 @@ impl Resource {
             },
             datetime: Utc.with_ymd_and_hms(2021, 1, 1, 10, 0, 0).unwrap(),
             decimal: rust_decimal::Decimal::new(102, 1),
+            number: 42,
             bool: true,
         }
     }
@@ -73,7 +75,7 @@ fn match_all(filter: &str) {
 #[test_case("d pr"; "one resource do not match with present")]
 #[test_case("a eq \"test1\" and b eq \"test2\" and (c eq \"wrong1\" or c eq \"wrong2\")"; "complex filter 2")]
 #[test_case("datetime gt \"2022-01-01T10:10:10Z\""; "filter with date")]
-#[test_case("a eq \"test1\" and subresource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
+#[test_case("a eq \"test1\" and sub_resource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
 fn match_none(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);

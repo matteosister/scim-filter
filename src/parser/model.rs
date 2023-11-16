@@ -52,6 +52,7 @@ pub enum Value<'a> {
     Boolean(bool),
     DateTime(chrono::DateTime<FixedOffset>),
     Number(RustDecimal),
+    #[allow(dead_code)]
     Binary(&'a str),
 }
 

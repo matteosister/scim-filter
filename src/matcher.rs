@@ -1,8 +1,11 @@
+use std::fmt::Debug;
+
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::Number;
+use serde_json::Value as JsonValue;
 
 use crate::error::Error;
 use crate::error::Error::InvalidFilter;
@@ -32,7 +35,11 @@ where
 }
 
 impl<'a> Expression<'a> {
-    fn do_match(&self, prefix: Option<&str>, resource: serde_json::Value) -> Result<bool, Error> {
+    fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        println!(
+            "{:.>30}: prefix = {:?}, resource = {:?}",
+            "matching expression", prefix, resource
+        );
         match self {
             Expression::Attribute(attribute_expression) => {
                 attribute_expression.do_match(prefix, resource)
@@ -46,30 +53,32 @@ impl<'a> Expression<'a> {
 }
 
 impl<'a> AttributeExpression<'a> {
-    pub fn do_match(
-        &self,
-        prefix: Option<&str>,
-        resource: serde_json::Value,
-    ) -> Result<bool, Error> {
-        println!("{:.>30}: {:?}", "matching attribute expression", self);
-        let resource_value = self.get_value(prefix, resource);
+    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        println!(
+            "{:.>30}: prefix={:?} {:?}",
+            "matching attribute expression", prefix, self
+        );
         match self {
             AttributeExpression::Complex(ComplexData {
                 attribute,
                 expression,
-            }) => expression.do_match(Some(attribute), resource_value),
+            }) => expression.do_match(Some(attribute), resource),
             AttributeExpression::Simple(SimpleData {
                 expression_operator,
                 value,
                 ..
             }) => {
+                let resource_value = self.get_value(prefix, resource);
                 if resource_value.is_null() {
                     Ok(true)
                 } else {
-                    value.do_match(expression_operator, resource_value)
+                    value.do_match(expression_operator, &resource_value)
                 }
             }
-            AttributeExpression::Present(_) => Ok(!resource_value.is_null()),
+            AttributeExpression::Present(_) => {
+                let resource_value = self.get_value(prefix, resource);
+                Ok(!resource_value.is_null())
+            }
         }
     }
 
@@ -85,33 +94,45 @@ impl<'a> AttributeExpression<'a> {
         }
     }
 
-    fn get_value(&self, prefix: Option<&str>, value: serde_json::Value) -> serde_json::Value {
+    fn get_value(&self, prefix: Option<&str>, value: JsonValue) -> JsonValue {
+        /*println!(
+            "{:.>30}: prefix = {:?}, value = {:?}",
+            "get_value", prefix, value
+        );*/
         let full_attribute_name = self.full_attribute_name(prefix);
+        //println!("{:.>30}: {}", "full_attribute_name", full_attribute_name);
         let sub_attributes = full_attribute_name.split(".").collect::<Vec<&str>>();
+        println!("{:.>30}: {:?}", "sub_attributes", sub_attributes);
         sub_attributes
             .iter()
             .fold((value, None), |(value, result), attribute_name| {
+                println!(
+                    "{:.>30}: value={:?} result={:?}",
+                    "fold iteration", value, result
+                );
                 match result {
                     None => {
                         // first iteration
-                        (value, Some(value[attribute_name]))
+                        (
+                            value[attribute_name].clone(),
+                            Some(value[attribute_name].clone()),
+                        )
                     }
-                    Some(serde_json::Value::Null) => (value, Some(serde_json::Value::Null)),
-                    Some(v) => (value, Some(v)),
+                    Some(JsonValue::Null) => (value, Some(JsonValue::Null)),
+                    Some(_) => (
+                        value[attribute_name].clone(),
+                        Some(value[attribute_name].clone()),
+                    ),
                 }
             })
             .1
-            .unwrap_or_else(|| serde_json::Value::Null)
+            .unwrap_or_else(|| JsonValue::Null)
     }
 }
 
 impl<'a> LogicalExpression<'a> {
-    pub fn do_match(
-        &self,
-        prefix: Option<&str>,
-        resource: serde_json::Value,
-    ) -> Result<bool, Error> {
-        let left_match = self.left.do_match(prefix, resource)?;
+    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        let left_match = self.left.do_match(prefix, resource.clone())?;
         if left_match && self.operator.is_or() {
             Ok(true)
         } else if left_match && self.operator.is_and() {
@@ -123,16 +144,11 @@ impl<'a> LogicalExpression<'a> {
 }
 
 impl<'a> GroupExpression<'a> {
-    pub fn do_match(
-        &self,
-        prefix: Option<&str>,
-        resource: serde_json::Value,
-    ) -> Result<bool, Error> {
-        let content_match = if self.not {
-            !self.content.do_match(prefix, resource)?
-        } else {
-            self.content.do_match(prefix, resource)?
-        };
+    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+        let mut content_match = self.content.do_match(prefix, resource.clone())?;
+        if self.not {
+            content_match = !content_match;
+        }
         match (content_match, &self.operator) {
             (false, _) => Ok(false),
             (true, None) => Ok(true),
@@ -154,12 +170,13 @@ impl<'a> Value<'a> {
     pub fn do_match(
         &self,
         operator: &ExpressionOperatorComparison,
-        resource_value: serde_json::Value,
+        json_value: &'a JsonValue,
     ) -> Result<bool, Error> {
         println!(
             "{:.>30}: {:?} {:?} {:?}",
-            "comparison", self, operator, resource_value
+            "comparison", self, operator, json_value
         );
+        let resource_value = Self::from_json_value(&json_value)?;
         match operator {
             ExpressionOperatorComparison::Equal => resource_value.equal(self),
             ExpressionOperatorComparison::NotEqual => resource_value.not_equal(self),
@@ -168,8 +185,32 @@ impl<'a> Value<'a> {
             ExpressionOperatorComparison::EndsWith => resource_value.ends_with(self),
             ExpressionOperatorComparison::GreaterThan => resource_value.greater_than(self),
             ExpressionOperatorComparison::GreaterThanOrEqual => resource_value.greater_equal(self),
-            ExpressionOperatorComparison::LessThan => self.less_then(resource_value),
+            ExpressionOperatorComparison::LessThan => resource_value.less_then(self),
             ExpressionOperatorComparison::LessThanOrEqual => resource_value.less_equal(self),
+        }
+    }
+
+    fn from_json_value(value: &'a JsonValue) -> Result<Self, Error> {
+        match value {
+            JsonValue::Bool(v) => Ok(Self::Boolean(*v)),
+            JsonValue::Number(n) => {
+                if let Some(number) = Self::to_decimal_number(&n) {
+                    return Ok(Self::Number(number));
+                }
+                Err(InvalidFilter)
+            }
+            JsonValue::String(s) => {
+                if let Some(datetime) = Self::to_datetime(&s) {
+                    return Ok(Self::DateTime(datetime));
+                }
+
+                if let Some(d) = Self::to_decimal_string(&s) {
+                    return Ok(Self::Number(d));
+                }
+
+                Ok(Self::String(&s))
+            }
+            _ => Err(InvalidFilter),
         }
     }
 
@@ -210,6 +251,7 @@ impl<'a> Value<'a> {
     }
 
     fn ends_with(&self, other: &Self) -> Result<bool, Error> {
+        println!("{:.>30}: {:?} {:?}", "ends_with", self, other);
         match (self, other) {
             (Value::String(a), Value::String(b)) => Ok(a.ends_with(b)),
             _ => Err(InvalidFilter),
@@ -240,17 +282,13 @@ impl<'a> Value<'a> {
         }
     }
 
-    fn less_then(&self, resource_value: serde_json::Value) -> Result<bool, Error> {
-        match (resource_value, self) {
-            (serde_json::Value::String(a), Value::String(b)) => Ok(a < b.to_string()),
-            (serde_json::Value::Bool(_), Value::Boolean(_)) => Err(InvalidFilter),
-            (serde_json::Value::String(a), Value::DateTime(b)) => {
-                Self::compare(Self::to_datetime, a, b, |a, b| a < b)
-            }
-            (serde_json::Value::Number(a), Value::Number(b)) => {
-                Self::compare(Self::to_decimal, a, b, |a, b| a < b)
-            }
-            (_, Value::Binary(_)) => Err(InvalidFilter),
+    fn less_then(&self, other: &Self) -> Result<bool, Error> {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => Ok(a < b),
+            (Value::Boolean(_), Value::Boolean(_)) => Err(InvalidFilter),
+            (Value::DateTime(a), Value::DateTime(b)) => Ok(a < b),
+            (Value::Number(a), Value::Number(b)) => Ok(a < b),
+            (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
             // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
@@ -268,11 +306,11 @@ impl<'a> Value<'a> {
         }
     }
 
-    fn to_datetime(str_date: String) -> Option<DateTime<FixedOffset>> {
-        chrono::DateTime::parse_from_rfc3339(&str_date).ok()
+    fn to_datetime(str_date: &str) -> Option<DateTime<FixedOffset>> {
+        chrono::DateTime::parse_from_rfc3339(str_date).ok()
     }
 
-    fn to_decimal(n: Number) -> Option<Decimal> {
+    fn to_decimal_number(n: &Number) -> Option<Decimal> {
         if n.is_i64() {
             return Decimal::from_i64(n.as_i64().unwrap());
         }
@@ -286,15 +324,7 @@ impl<'a> Value<'a> {
         None
     }
 
-    /// HOF to compare values
-    fn compare<T, A, B>(
-        convert: impl FnOnce(T) -> Option<A>,
-        value_to_be_converted: T,
-        value_to_compare_to: B,
-        compare_fn: impl Fn(&A, B) -> bool,
-    ) -> Result<bool, Error> {
-        Ok(convert(value_to_be_converted)
-            .map(|converted_value| compare_fn(&converted_value, value_to_compare_to))
-            .unwrap_or(false))
+    fn to_decimal_string(n: &str) -> Option<Decimal> {
+        Decimal::from_str_exact(n).ok()
     }
 }
