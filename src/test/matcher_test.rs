@@ -1,10 +1,10 @@
 use chrono::{DateTime, TimeZone, Utc};
-use rust_decimal_macros::dec;
+use serde::Serialize;
 use test_case::test_case;
 
 use super::*;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Serialize, PartialEq)]
 struct Resource {
     a: String,
     b: String,
@@ -15,7 +15,7 @@ struct Resource {
     bool: bool,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Serialize, PartialEq)]
 struct SubResource {
     first: String,
     second: String,
@@ -34,22 +34,6 @@ impl Resource {
             datetime: Utc.with_ymd_and_hms(2021, 1, 1, 10, 0, 0).unwrap(),
             decimal: rust_decimal::Decimal::new(102, 1),
             bool: true,
-        }
-    }
-}
-
-impl ScimResourceAccessor for Resource {
-    fn get(&self, key: &str) -> Option<Value> {
-        match key {
-            "a" => Some(Value::String(&self.a)),
-            "b" => Some(Value::String(&self.b)),
-            "c" => Some(Value::String(&self.c)),
-            "datetime" => Some(Value::DateTime(self.datetime.into())),
-            "decimal" => Some(Value::Number(dec![10.2])),
-            "bool" => Some(Value::Boolean(self.bool)),
-            "subresource.first" => Some(Value::String(&self.sub_resource.first)),
-            "subresource.second" => Some(Value::String(&self.sub_resource.second)),
-            _ => None,
         }
     }
 }
@@ -78,7 +62,8 @@ fn match_all(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);
 
-    assert_eq!(Ok(example_resources()), res);
+    assert!(res.is_ok());
+    assert_eq!(example_resources(), res.unwrap());
 }
 
 #[test_case("a eq \"no-match\""; "one resource do not match with wrong equals")]
@@ -93,7 +78,8 @@ fn match_none(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);
 
-    assert_eq!(Ok(vec![]), res);
+    assert!(res.is_ok());
+    assert_eq!(Vec::<Resource>::new(), res.unwrap());
 }
 
 #[test_case("a eq true"; "equals string with boolean")]
@@ -121,5 +107,5 @@ fn match_invalid_filter(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);
 
-    assert_eq!(Err(InvalidFilter), res);
+    assert!(res.is_err());
 }

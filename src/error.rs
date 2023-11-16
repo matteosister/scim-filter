@@ -1,9 +1,12 @@
 use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
 pub enum Error {
     #[error(transparent)]
     ParserError(#[from] nom::error::Error<String>),
+
+    #[error(transparent)]
+    SerializationError(#[from] serde_json::Error),
 
     #[error(
         "the filter has a wrong format, after parsing the input \"{0}\", the part \"{1}\" remains"
