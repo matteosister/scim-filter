@@ -97,7 +97,8 @@ fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
 
 fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
     println!("{:.>30}: {}", "group_expression", input);
-    let (input, (content, operator, rest)) = tuple((
+    let (input, (not, content, operator, rest)) = tuple((
+        opt(value(true, ws(tag("not")))),
         (delimited(char('('), expression, char(')'))),
         opt(ws(logical_operator)),
         opt(expression),
@@ -105,6 +106,7 @@ fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
     Ok((
         input,
         GroupExpression {
+            not: not.unwrap_or(false),
             content: Box::new(content),
             operator,
             rest: rest.map(Box::new),
@@ -125,7 +127,7 @@ pub(crate) fn expression(input: &str) -> IResult<&str, Expression> {
 fn parse_attribute(input: &str) -> IResult<&str, &str> {
     recognize(pair(
         alpha1,
-        many0_count(alt((alphanumeric1, tag("_"), tag("-"), tag("$")))),
+        many0_count(alt((alphanumeric1, tag("_"), tag("-"), tag("$"), tag(".")))),
     ))(input)
 }
 

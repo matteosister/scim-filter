@@ -34,6 +34,7 @@ fn expression_with_parens_at_the_beginning() {
     let parsed = scim_filter_parser("(a eq \"test\" or b pr) and c pr");
     assert_eq!(
         (Expression::Group(GroupExpression {
+            not: false,
             content: Box::new(Expression::Logical(LogicalExpression {
                 left: Box::new(gen_attribute_expression("a", Equal, "test")),
                 operator: Or,
@@ -114,6 +115,7 @@ fn logical_expression_with_parens() {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
             operator: And,
             right: Box::new(Expression::Group(GroupExpression {
+                not: false,
                 content: Box::new(Expression::Logical(LogicalExpression {
                     left: Box::new(gen_attribute_expression("b", NotEqual, "test2")),
                     operator: Or,
@@ -132,10 +134,12 @@ fn nested_parens() {
     let parsed = scim_filter_parser("(a pr and (b pr or c pr))");
     assert_eq!(
         (Expression::Group(GroupExpression {
+            not: false,
             content: Box::new(Expression::Logical(LogicalExpression {
                 left: Box::new(gen_attribute_expression_pr("a")),
                 operator: LogicalOperator::And,
                 right: Box::new(Expression::Group(GroupExpression {
+                    not: false,
                     content: Box::new(Expression::Logical(LogicalExpression {
                         left: Box::new(gen_attribute_expression_pr("b")),
                         operator: LogicalOperator::Or,
@@ -176,6 +180,35 @@ fn complex_attributes() {
                     })),
                 }
             ))),
+        }),
+        parsed.unwrap()
+    );
+}
+
+#[test]
+fn not_expressions() {
+    let parsed = scim_filter_parser(
+        "userType ne \"Employee\" and not (emails co \"example.com\" or emails.value co \"example.org\")",
+    );
+
+    assert_eq!(
+        Expression::Logical(LogicalExpression {
+            left: Box::new(gen_attribute_expression("userType", NotEqual, "Employee")),
+            operator: LogicalOperator::And,
+            right: Box::new(Expression::Group(GroupExpression {
+                not: true,
+                content: Box::new(Expression::Logical(LogicalExpression {
+                    left: Box::new(gen_attribute_expression("emails", Contains, "example.com")),
+                    operator: LogicalOperator::Or,
+                    right: Box::new(gen_attribute_expression(
+                        "emails.value",
+                        Contains,
+                        "example.org"
+                    )),
+                })),
+                operator: None,
+                rest: None,
+            })),
         }),
         parsed.unwrap()
     );

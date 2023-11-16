@@ -68,6 +68,7 @@ pub(crate) struct LogicalExpression<'a> {
 /// This is a recursion node, since everything inside parens could be an expression
 #[derive(Debug, PartialEq)]
 pub(crate) struct GroupExpression<'a> {
+    pub(crate) not: bool,
     pub(crate) content: Box<Expression<'a>>,
     pub(crate) operator: Option<LogicalOperator>,
     pub(crate) rest: Option<Box<Expression<'a>>>,

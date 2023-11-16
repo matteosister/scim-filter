@@ -73,6 +73,7 @@ fn example_resources() -> Vec<Resource> {
 #[test_case("a eq \"test1\" and subresource[first co \"test-\" and second co \"test-\"]"; "filter with complex attribute match")]
 #[test_case("a eq \"test1\" and subresource[first sw \"test-\"]"; "filter with complex attribute and one single expression")]
 #[test_case("a gt \"tess\""; "GreaterThan on strings")]
+#[test_case("a ge \"tess\" and not (datetime lt \"2020-01-01T10:10:10Z\")"; "not expression")]
 fn match_all(filter: &str) {
     let resources = example_resources();
     let res = match_filter(filter, resources);

@@ -108,7 +108,11 @@ impl<'a> GroupExpression<'a> {
         prefix: Option<&str>,
         resource: &impl ScimResourceAccessor,
     ) -> Result<bool, Error> {
-        let content_match = self.content.do_match(prefix, resource)?;
+        let content_match = if self.not {
+            !self.content.do_match(prefix, resource)?
+        } else {
+            self.content.do_match(prefix, resource)?
+        };
         match (content_match, &self.operator) {
             (false, _) => Ok(false),
             (true, None) => Ok(true),
