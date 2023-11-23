@@ -13,7 +13,7 @@ use crate::parser::{model::*, scim_filter_parser};
 #[path = "test/matcher_test.rs"]
 mod matcher_test;
 
-pub fn match_filter<T>(input: &str, resources: Vec<T>) -> Result<Vec<T>, Error>
+pub fn scim_filter<T>(input: &str, resources: impl IntoIterator<Item = T>) -> Result<Vec<T>, Error>
 where
     T: Serialize,
 {

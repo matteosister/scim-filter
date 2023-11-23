@@ -2,7 +2,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use serde::Serialize;
 use test_case::test_case;
 
-use super::*;
+use crate::ScimFilter;
 
 #[derive(Debug, Serialize, PartialEq)]
 struct Resource {
@@ -62,7 +62,7 @@ fn example_resources() -> Vec<Resource> {
 #[test_case("a ge \"tess\" and not (datetime lt \"2020-01-01T10:10:10Z\")"; "not expression")]
 fn match_all(filter: &str) {
     let resources = example_resources();
-    let res = match_filter(filter, resources);
+    let res = resources.scim_filter(filter);
 
     assert!(res.is_ok());
     assert_eq!(example_resources(), res.unwrap());
@@ -78,7 +78,7 @@ fn match_all(filter: &str) {
 #[test_case("a eq \"test1\" and sub_resource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
 fn match_none(filter: &str) {
     let resources = example_resources();
-    let res = match_filter(filter, resources);
+    let res = resources.scim_filter(filter);
 
     assert!(res.is_ok());
     assert_eq!(Vec::<Resource>::new(), res.unwrap());
@@ -107,7 +107,7 @@ fn match_none(filter: &str) {
 #[test_case("decimal ew \"test\""; "equals decimal do not work with EndsWith")]
 fn match_invalid_filter(filter: &str) {
     let resources = example_resources();
-    let res = match_filter(filter, resources);
+    let res = resources.scim_filter(filter);
 
     assert!(res.is_err());
 }
