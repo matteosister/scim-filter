@@ -34,10 +34,6 @@ where
 
 impl<'a> Expression<'a> {
     fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
-        println!(
-            "{:.>30}: prefix = {:?}, resource = {:?}",
-            "matching expression", prefix, resource
-        );
         match self {
             Expression::Attribute(attribute_expression) => {
                 attribute_expression.do_match(prefix, resource)
@@ -52,10 +48,6 @@ impl<'a> Expression<'a> {
 
 impl<'a> AttributeExpression<'a> {
     pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
-        println!(
-            "{:.>30}: prefix={:?} {:?}",
-            "matching attribute expression", prefix, self
-        );
         match self {
             AttributeExpression::Complex(ComplexData {
                 attribute,
@@ -95,14 +87,9 @@ impl<'a> AttributeExpression<'a> {
     fn get_value(&self, prefix: Option<&str>, value: JsonValue) -> JsonValue {
         let full_attribute_name = self.full_attribute_name(prefix);
         let sub_attributes = full_attribute_name.split('.').collect::<Vec<&str>>();
-        println!("{:.>30}: {:?}", "sub_attributes", sub_attributes);
         sub_attributes
             .iter()
             .fold((value, None), |(value, result), attribute_name| {
-                println!(
-                    "{:.>30}: value={:?} result={:?}",
-                    "fold iteration", value, result
-                );
                 match result {
                     None => {
                         // first iteration
@@ -129,6 +116,8 @@ impl<'a> LogicalExpression<'a> {
         if left_match && self.operator.is_or() {
             Ok(true)
         } else if left_match && self.operator.is_and() {
+            self.right.do_match(prefix, resource)
+        } else if !left_match && self.operator.is_or() {
             self.right.do_match(prefix, resource)
         } else {
             Ok(false)
@@ -165,10 +154,6 @@ impl<'a> Value<'a> {
         operator: &ExpressionOperatorComparison,
         json_value: &'a JsonValue,
     ) -> Result<bool, Error> {
-        println!(
-            "{:.>30}: {:?} {:?} {:?}",
-            "comparison", self, operator, json_value
-        );
         let resource_value = Self::from_json_value(json_value)?;
         match operator {
             ExpressionOperatorComparison::Equal => resource_value.equal(self),

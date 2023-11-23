@@ -43,6 +43,12 @@ impl Resource {
 fn example_resources() -> Vec<Resource> {
     vec![Resource::new("test1", "test2", "test3")]
 }
+fn example_resources2() -> Vec<Resource> {
+    vec![
+        Resource::new("a1", "b1", "c1"),
+        Resource::new("a2", "b2", "c2"),
+    ]
+}
 
 #[test_case("a eq \"test1\""; "one resource do match with equals")]
 #[test_case("b co \"est\""; "one resource do match with correct contains")]
@@ -60,7 +66,7 @@ fn example_resources() -> Vec<Resource> {
 #[test_case("a eq \"test1\" and subresource[first sw \"test-\"]"; "filter with complex attribute and one single expression")]
 #[test_case("a gt \"tess\""; "GreaterThan on strings")]
 #[test_case("a ge \"tess\" and not (datetime lt \"2020-01-01T10:10:10Z\")"; "not expression")]
-fn match_all(filter: &str) {
+fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = resources.scim_filter(filter);
 
@@ -76,7 +82,7 @@ fn match_all(filter: &str) {
 #[test_case("a eq \"test1\" and b eq \"test2\" and (c eq \"wrong1\" or c eq \"wrong2\")"; "complex filter 2")]
 #[test_case("datetime gt \"2022-01-01T10:10:10Z\""; "filter with date")]
 #[test_case("a eq \"test1\" and sub_resource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
-fn match_none(filter: &str) {
+fn match_none_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = resources.scim_filter(filter);
 
@@ -105,9 +111,18 @@ fn match_none(filter: &str) {
 #[test_case("decimal eq true"; "equals decimal with boolean")]
 #[test_case("decimal eq \"2022-01-01T10:10:10Z\""; "equals decimal with datetime")]
 #[test_case("decimal ew \"test\""; "equals decimal do not work with EndsWith")]
-fn match_invalid_filter(filter: &str) {
+fn invalid_filter(filter: &str) {
     let resources = example_resources();
     let res = resources.scim_filter(filter);
 
     assert!(res.is_err());
+}
+
+#[test_case("a eq \"a1\" or b eq \"b2\""; "should return 2 resources")]
+fn match_ok_with_two_resources(filter: &str) {
+    let resources = example_resources2();
+    let res = resources.scim_filter(filter);
+
+    assert!(res.is_ok());
+    assert_eq!(example_resources2(), res.unwrap());
 }

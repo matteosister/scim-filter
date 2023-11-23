@@ -34,7 +34,6 @@ pub(crate) fn scim_filter_parser(input: &str) -> Result<Expression, Error> {
 }
 
 fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
-    println!("{:.>30}: {}", "logical_operator", input);
     map_res(
         alt((tag_no_case("and"), tag_no_case("or"))),
         LogicalOperator::from_str,
@@ -42,7 +41,6 @@ fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
 }
 
 fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
-    println!("{:.>30}: {}", "attribute_expression", input);
     alt((
         map(
             tuple((
@@ -78,7 +76,6 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
 }
 
 fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
-    println!("{:.>30}: {}", "logical_expression", input);
     let (input, (left, logical_operator, right)) = tuple((
         map(ws(attribute_expression), Expression::Attribute),
         ws(logical_operator),
@@ -96,7 +93,6 @@ fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
 }
 
 fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
-    println!("{:.>30}: {}", "group_expression", input);
     let (input, (not, content, operator, rest)) = tuple((
         opt(value(true, ws(tag("not")))),
         (delimited(char('('), expression, char(')'))),
@@ -115,7 +111,6 @@ fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
 }
 
 pub(crate) fn expression(input: &str) -> IResult<&str, Expression> {
-    println!("{:.>30}: {}", "expression", input);
     alt((
         map(logical_expression, Expression::Logical),
         map(attribute_expression, Expression::Attribute),
