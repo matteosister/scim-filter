@@ -229,7 +229,6 @@ impl<'a> Value<'a> {
     }
 
     fn ends_with(&self, other: &Self) -> Result<bool, Error> {
-        println!("{:.>30}: {:?} {:?}", "ends_with", self, other);
         match (self, other) {
             (Value::String(a), Value::String(b)) => Ok(a.ends_with(b)),
             _ => Err(InvalidFilter),
