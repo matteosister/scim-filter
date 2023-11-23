@@ -2,8 +2,14 @@
 name = "scim-filter"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+description = "SCIM filter specification implemented in Rust"
+homepage = "https://github.com/matteosister/scim-filter"
+repository = "https://github.com/matteosister/scim-filter"
+documentation = "https://docs.rs/scim-filter"
+readme = "README.md"
+keywords = ["scim"]
+categories = ["parsing"]
 
 [dependencies]
 chrono = { version = "0.4.31", features = ["serde"] }
