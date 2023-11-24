@@ -7,6 +7,7 @@ use serde_json::Value as JsonValue;
 
 use crate::error::Error;
 use crate::error::Error::InvalidFilter;
+use crate::parser::model::Value::{ArrayOfNumber, ArrayOfString};
 use crate::parser::{model::*, scim_filter_parser};
 
 #[cfg(test)]
@@ -187,6 +188,9 @@ impl<'a> Value<'a> {
                 }
 
                 Ok(Self::String(s))
+            }
+            JsonValue::Array(values) => {
+                todo!()
             }
             _ => Err(InvalidFilter),
         }

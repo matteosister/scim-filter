@@ -14,6 +14,7 @@ struct Resource {
     decimal: rust_decimal::Decimal,
     number: u32,
     bool: bool,
+    multi_simple_value: Vec<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -36,6 +37,7 @@ impl Resource {
             decimal: rust_decimal::Decimal::new(102, 1),
             number: 42,
             bool: true,
+            multi_simple_value: vec![a.to_string(), b.to_string(), c.to_string()],
         }
     }
 }
@@ -67,11 +69,11 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("a eq \"test1\" and subresource[first sw \"test-\"]"; "filter with complex attribute and one single expression")]
 #[test_case("a gt \"tess\""; "GreaterThan on strings")]
 #[test_case("a ge \"tess\" and not (datetime lt \"2020-01-01T10:10:10Z\")"; "not expression")]
+#[test_case("multi_simple_value eq \"test1\""; "simple multi-valued attribute")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
 
-    assert!(res.is_ok());
     assert_eq!(example_resources(), res.unwrap());
 }
 
@@ -87,7 +89,6 @@ fn match_none_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
 
-    assert!(res.is_ok());
     assert_eq!(Vec::<Resource>::new(), res.unwrap());
 }
 

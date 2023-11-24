@@ -54,6 +54,10 @@ pub enum Value<'a> {
     Number(RustDecimal),
     #[allow(dead_code)]
     Binary(&'a str),
+    ArrayOfString(Vec<String>),
+    ArrayOfBoolean(Vec<bool>),
+    ArrayOfDateTime(Vec<chrono::DateTime<FixedOffset>>),
+    ArrayOfNumber(Vec<RustDecimal>),
 }
 
 /// A logical expression in the form of xxx (and|or) yyy
