@@ -2,7 +2,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use serde::Serialize;
 use test_case::test_case;
 
-use crate::ScimFilter;
+use crate::scim_filter;
 
 #[derive(Debug, Serialize, PartialEq)]
 struct Resource {
@@ -47,6 +47,7 @@ fn example_resources2() -> Vec<Resource> {
     vec![
         Resource::new("a1", "b1", "c1"),
         Resource::new("a2", "b2", "c2"),
+        Resource::new("a3", "b3", "c3"),
     ]
 }
 
@@ -68,7 +69,7 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("a ge \"tess\" and not (datetime lt \"2020-01-01T10:10:10Z\")"; "not expression")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
-    let res = resources.scim_filter(filter);
+    let res = scim_filter(filter, resources);
 
     assert!(res.is_ok());
     assert_eq!(example_resources(), res.unwrap());
@@ -84,7 +85,7 @@ fn match_ok_with_one_resource(filter: &str) {
 #[test_case("a eq \"test1\" and sub_resource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
 fn match_none_with_one_resource(filter: &str) {
     let resources = example_resources();
-    let res = resources.scim_filter(filter);
+    let res = scim_filter(filter, resources);
 
     assert!(res.is_ok());
     assert_eq!(Vec::<Resource>::new(), res.unwrap());
@@ -113,16 +114,42 @@ fn match_none_with_one_resource(filter: &str) {
 #[test_case("decimal ew \"test\""; "equals decimal do not work with EndsWith")]
 fn invalid_filter(filter: &str) {
     let resources = example_resources();
-    let res = resources.scim_filter(filter);
+    let res = scim_filter(filter, resources);
 
     assert!(res.is_err());
 }
 
-#[test_case("a eq \"a1\" or b eq \"b2\""; "should return 2 resources")]
-fn match_ok_with_two_resources(filter: &str) {
+#[test_case("a eq \"a1\" or b eq \"b2\" or c eq \"c3\""; "or should match both")]
+#[test_case("a sw \"a\""; "all starting with a should match")]
+fn match_all_with_two_resources(filter: &str) {
     let resources = example_resources2();
-    let res = resources.scim_filter(filter);
+    let res = scim_filter(filter, resources);
 
     assert!(res.is_ok());
     assert_eq!(example_resources2(), res.unwrap());
+}
+
+#[test_case("a eq \"a1\" and b eq \"b2\""; "and should not match")]
+#[test_case("a eq \"aaa1\""; "none should not match")]
+fn match_none_with_two_resources(filter: &str) {
+    let resources = example_resources2();
+    let res = scim_filter(filter, resources);
+
+    assert!(res.is_ok());
+    assert_eq!(Vec::<Resource>::new(), res.unwrap());
+}
+
+#[test_case("a eq \"a1\" and (b eq \"b1\" or b eq \"b2\")", vec![1]; "nested or should match only first resource")]
+#[test_case("(a eq \"a1\" and b eq \"b1\") or a eq \"b2\"", vec![1]; "nested and should match only first resource")]
+fn match_partial_with_two_resources(filter: &str, indexes: Vec<usize>) {
+    let resources = example_resources2();
+    let res = scim_filter(filter, resources);
+
+    assert!(res.is_ok());
+    let all = example_resources2();
+    let mut expected = vec![];
+    for i in indexes {
+        expected.push(all.get(i - 1).unwrap());
+    }
+    assert_eq!(expected, res.unwrap().iter().collect::<Vec<&Resource>>());
 }
