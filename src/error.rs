@@ -15,4 +15,7 @@ pub enum Error {
 
     #[error("The applied filter is invalid")]
     InvalidFilter,
+
+    #[error("The resource has an invalid format, that can't be considered in a filter")]
+    InvalidResource,
 }
