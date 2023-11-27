@@ -15,6 +15,7 @@ struct Resource {
     number: u32,
     bool: bool,
     multi_simple_value: Vec<String>,
+    multi_simple_value_numbers: Vec<u32>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -38,6 +39,7 @@ impl Resource {
             number: 42,
             bool: true,
             multi_simple_value: vec![a.to_string(), b.to_string(), c.to_string()],
+            multi_simple_value_numbers: vec![1, 2, 3],
         }
     }
 }
@@ -70,6 +72,16 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("a gt \"tess\""; "GreaterThan on strings")]
 #[test_case("a ge \"tess\" and not (datetime lt \"2020-01-01T10:10:10Z\")"; "not expression")]
 #[test_case("multi_simple_value eq \"test1\""; "simple multi-valued attribute")]
+#[test_case("multi_simple_value ne \"testZ\""; "simple multi-valued attribute with ne")]
+#[test_case("multi_simple_value co \"test1\""; "simple multi-valued attribute with contains")]
+#[test_case("multi_simple_value sw \"tes\""; "simple multi-valued attribute with startsWith")]
+#[test_case("multi_simple_value ew \"st1\""; "simple multi-valued attribute with endsWith")]
+#[test_case("multi_simple_value_numbers gt 2"; "simple multi-valued attribute with greaterThan")]
+#[test_case("multi_simple_value gt \"tess\""; "simple multi-valued attribute with greaterThan on strings")]
+#[test_case("multi_simple_value ge \"test\""; "simple multi-valued attribute with greaterEqual on strings")]
+#[test_case("multi_simple_value_numbers ge 3"; "simple multi-valued attribute with greaterEqual")]
+#[test_case("multi_simple_value_numbers lt 2"; "simple multi-valued attribute with lessThan")]
+#[test_case("multi_simple_value_numbers le 1"; "simple multi-valued attribute with lessThanEqual")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
@@ -85,6 +97,17 @@ fn match_ok_with_one_resource(filter: &str) {
 #[test_case("a eq \"test1\" and b eq \"test2\" and (c eq \"wrong1\" or c eq \"wrong2\")"; "complex filter 2")]
 #[test_case("datetime gt \"2022-01-01T10:10:10Z\""; "filter with date")]
 #[test_case("a eq \"test1\" and sub_resource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
+#[test_case("multi_simple_value eq \"ZZZ\""; "simple multi-valued attribute")]
+#[test_case("multi_simple_value ne \"test1\""; "simple multi-valued attribute with ne")]
+#[test_case("multi_simple_value co \"ZZZ\""; "simple multi-valued attribute with contains")]
+#[test_case("multi_simple_value sw \"ZZZ\""; "simple multi-valued attribute with startsWith")]
+#[test_case("multi_simple_value ew \"stZ\""; "simple multi-valued attribute with endsWith")]
+#[test_case("multi_simple_value_numbers gt 3"; "simple multi-valued attribute with greaterThan")]
+#[test_case("multi_simple_value gt \"testZ\""; "simple multi-valued attribute with greaterThan on strings")]
+#[test_case("multi_simple_value ge \"test4\""; "simple multi-valued attribute with greaterEqual on strings")]
+#[test_case("multi_simple_value_numbers ge 4"; "simple multi-valued attribute with greaterEqual")]
+#[test_case("multi_simple_value_numbers lt 1"; "simple multi-valued attribute with lessThan")]
+#[test_case("multi_simple_value_numbers le 0"; "simple multi-valued attribute with lessThanEqual")]
 fn match_none_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);

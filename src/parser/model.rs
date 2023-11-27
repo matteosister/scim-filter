@@ -54,7 +54,7 @@ pub enum Value<'a> {
     Number(RustDecimal),
     #[allow(dead_code)]
     Binary(&'a str),
-    ArrayOfString(Vec<String>),
+    ArrayOfString(Vec<&'a str>),
     ArrayOfBoolean(Vec<bool>),
     ArrayOfDateTime(Vec<chrono::DateTime<FixedOffset>>),
     ArrayOfNumber(Vec<RustDecimal>),

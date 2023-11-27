@@ -7,8 +7,9 @@ use serde_json::Value as JsonValue;
 
 use crate::error::Error;
 use crate::error::Error::InvalidFilter;
-use crate::parser::model::Value::{ArrayOfNumber, ArrayOfString};
+use crate::parser::model::Value::{ArrayOfBoolean, ArrayOfDateTime, ArrayOfNumber, ArrayOfString};
 use crate::parser::{model::*, scim_filter_parser};
+use crate::Error::InvalidResource;
 
 #[cfg(test)]
 #[path = "test/matcher_test.rs"]
@@ -190,7 +191,58 @@ impl<'a> Value<'a> {
                 Ok(Self::String(s))
             }
             JsonValue::Array(values) => {
-                todo!()
+                if values.iter().all(|v| v.is_boolean()) {
+                    return Ok(Self::ArrayOfBoolean(
+                        values
+                            .iter()
+                            .map(|bool_value| bool_value.as_bool().unwrap())
+                            .collect(),
+                    ));
+                }
+                if values.iter().all(|v| v.is_number()) {
+                    return Ok(ArrayOfNumber(
+                        values
+                            .iter()
+                            .map(|number_value| number_value.as_number().unwrap())
+                            .try_fold(vec![], |mut acc, number| {
+                                acc.push(Self::to_decimal_number(number).ok_or(InvalidResource)?);
+                                Ok::<Vec<Decimal>, Error>(acc)
+                            })?,
+                    ));
+                }
+                if values.iter().all(|v| v.is_string()) {
+                    let string_values: Vec<&str> =
+                        values.iter().map(|v| v.as_str().unwrap()).collect();
+
+                    if string_values
+                        .iter()
+                        .all(|sv| Self::to_datetime(sv).is_some())
+                    {
+                        // datetimes list
+                        return Ok(Self::ArrayOfDateTime(
+                            string_values
+                                .iter()
+                                .map(|sv| Self::to_datetime(sv).unwrap())
+                                .collect(),
+                        ));
+                    }
+
+                    if string_values
+                        .iter()
+                        .all(|sv| Self::to_decimal_string(sv).is_some())
+                    {
+                        // decimal list
+                        return Ok(Self::ArrayOfNumber(
+                            string_values
+                                .iter()
+                                .map(|sv| Self::to_decimal_string(sv).unwrap())
+                                .collect(),
+                        ));
+                    }
+
+                    return Ok(ArrayOfString(string_values));
+                }
+                Err(InvalidResource)
             }
             _ => Err(InvalidFilter),
         }
@@ -203,6 +255,11 @@ impl<'a> Value<'a> {
             (Value::DateTime(a), Value::DateTime(b)) => Ok(a == b),
             (Value::Number(a), Value::Number(b)) => Ok(a == b),
             (Value::Binary(a), Value::Binary(b)) => Ok(a == b),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.contains(b)),
+            (ArrayOfBoolean(a), Value::Boolean(b)) => Ok(a.contains(b)),
+            (ArrayOfDateTime(a), Value::DateTime(b)) => Ok(a.contains(b)),
+            (ArrayOfNumber(a), Value::Number(b)) => Ok(a.contains(b)),
+            // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
     }
@@ -214,6 +271,11 @@ impl<'a> Value<'a> {
             (Value::DateTime(a), Value::DateTime(b)) => Ok(a != b),
             (Value::Number(a), Value::Number(b)) => Ok(a != b),
             (Value::Binary(a), Value::Binary(b)) => Ok(a != b),
+            (ArrayOfString(a), Value::String(b)) => Ok(!a.contains(b)),
+            (ArrayOfBoolean(a), Value::Boolean(b)) => Ok(!a.contains(b)),
+            (ArrayOfDateTime(a), Value::DateTime(b)) => Ok(!a.contains(b)),
+            (ArrayOfNumber(a), Value::Number(b)) => Ok(!a.contains(b)),
+            // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
     }
@@ -221,6 +283,8 @@ impl<'a> Value<'a> {
     fn contains(&self, other: &Self) -> Result<bool, Error> {
         match (self, other) {
             (Value::String(a), Value::String(b)) => Ok(a.contains(b)),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.contains(b)),
+            // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
     }
@@ -228,6 +292,8 @@ impl<'a> Value<'a> {
     fn starts_with(&self, other: &Self) -> Result<bool, Error> {
         match (self, other) {
             (Value::String(a), Value::String(b)) => Ok(a.starts_with(b)),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.iter().any(|a| a.starts_with(b))),
+            // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
     }
@@ -235,6 +301,8 @@ impl<'a> Value<'a> {
     fn ends_with(&self, other: &Self) -> Result<bool, Error> {
         match (self, other) {
             (Value::String(a), Value::String(b)) => Ok(a.ends_with(b)),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.iter().any(|a| a.ends_with(b))),
+            // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
     }
@@ -246,6 +314,10 @@ impl<'a> Value<'a> {
             (Value::DateTime(a), Value::DateTime(b)) => Ok(a > b),
             (Value::Number(a), Value::Number(b)) => Ok(a > b),
             (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.iter().any(|a| a > b)),
+            (ArrayOfBoolean(a), Value::Boolean(b)) => Ok(a.iter().any(|a| a > b)),
+            (ArrayOfDateTime(a), Value::DateTime(b)) => Ok(a.iter().any(|a| a > b)),
+            (ArrayOfNumber(a), Value::Number(b)) => Ok(a.iter().any(|a| a > b)),
             // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
@@ -258,6 +330,10 @@ impl<'a> Value<'a> {
             (Value::DateTime(a), Value::DateTime(b)) => Ok(a >= b),
             (Value::Number(a), Value::Number(b)) => Ok(a >= b),
             (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.iter().any(|a| a >= b)),
+            (ArrayOfBoolean(a), Value::Boolean(b)) => Ok(a.iter().any(|a| a >= b)),
+            (ArrayOfDateTime(a), Value::DateTime(b)) => Ok(a.iter().any(|a| a >= b)),
+            (ArrayOfNumber(a), Value::Number(b)) => Ok(a.iter().any(|a| a >= b)),
             // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
@@ -270,6 +346,10 @@ impl<'a> Value<'a> {
             (Value::DateTime(a), Value::DateTime(b)) => Ok(a < b),
             (Value::Number(a), Value::Number(b)) => Ok(a < b),
             (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.iter().any(|a| a < b)),
+            (ArrayOfBoolean(a), Value::Boolean(b)) => Ok(a.iter().any(|a| a < b)),
+            (ArrayOfDateTime(a), Value::DateTime(b)) => Ok(a.iter().any(|a| a < b)),
+            (ArrayOfNumber(a), Value::Number(b)) => Ok(a.iter().any(|a| a < b)),
             // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
@@ -282,6 +362,10 @@ impl<'a> Value<'a> {
             (Value::DateTime(a), Value::DateTime(b)) => Ok(a <= b),
             (Value::Number(a), Value::Number(b)) => Ok(a <= b),
             (Value::Binary(_), Value::Binary(_)) => Err(InvalidFilter),
+            (ArrayOfString(a), Value::String(b)) => Ok(a.iter().any(|a| a <= b)),
+            (ArrayOfBoolean(a), Value::Boolean(b)) => Ok(a.iter().any(|a| a <= b)),
+            (ArrayOfDateTime(a), Value::DateTime(b)) => Ok(a.iter().any(|a| a <= b)),
+            (ArrayOfNumber(a), Value::Number(b)) => Ok(a.iter().any(|a| a <= b)),
             // in this case the two data types do not match, it's an invalid filter.
             _ => Err(InvalidFilter),
         }
