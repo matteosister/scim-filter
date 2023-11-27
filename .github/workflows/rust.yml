@@ -15,10 +15,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-
     - name: Build
       run: cargo build --verbose
-
     - name: Run tests
       run: cargo test --verbose
 
@@ -27,24 +25,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-          components: llvm-tools-preview
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features --no-fail-fast
-        env:
-          CARGO_INCREMENTAL: '0'
-          RUSTFLAGS: '-Cinstrument-coverage'
-          LLVM_PROFILE_FILE: 'cargo-test-%p-%m.profraw'
-
-      - uses: actions-rs/grcov@v0.1
-
+      - name: add llvm-tools-preview component
+        run: rustup component add llvm-tools-preview
+      - name: Install grcov
+        run: cargo install grcov
+      - name: Run tests with coverage
+        run: CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw' cargo test
+      - name: Generate lcov file
+        run: grcov . --binary-path ./target/debug/deps/ -s . -t lcov --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o tests.lcov
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         env:
