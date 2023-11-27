@@ -89,22 +89,38 @@ impl<'a> AttributeExpression<'a> {
     fn get_value(&self, prefix: Option<&str>, value: JsonValue) -> JsonValue {
         let full_attribute_name = self.full_attribute_name(prefix);
         let sub_attributes = full_attribute_name.split('.').collect::<Vec<&str>>();
+
         sub_attributes
             .iter()
             .fold((value, None), |(value, result), attribute_name| {
-                match result {
-                    None => {
+                match (value, result) {
+                    (value, None) => {
                         // first iteration
                         (
                             value[attribute_name].clone(),
                             Some(value[attribute_name].clone()),
                         )
                     }
-                    Some(JsonValue::Null) => (value, Some(JsonValue::Null)),
-                    Some(_) => (
-                        value[attribute_name].clone(),
-                        Some(value[attribute_name].clone()),
-                    ),
+                    (value, Some(JsonValue::Null)) => (value, Some(JsonValue::Null)),
+                    (value, Some(_)) => {
+                        if value.is_array() {
+                            let values: Vec<JsonValue> = value
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|v| v[attribute_name].clone())
+                                .collect();
+                            (
+                                JsonValue::Array(values.clone()),
+                                Some(JsonValue::Array(values)),
+                            )
+                        } else {
+                            (
+                                value[attribute_name].clone(),
+                                Some(value[attribute_name].clone()),
+                            )
+                        }
+                    }
                 }
             })
             .1
@@ -157,6 +173,7 @@ impl<'a> Value<'a> {
         json_value: &'a JsonValue,
     ) -> Result<bool, Error> {
         let resource_value = Self::from_json_value(json_value)?;
+
         match operator {
             ExpressionOperatorComparison::Equal => resource_value.equal(self),
             ExpressionOperatorComparison::NotEqual => resource_value.not_equal(self),

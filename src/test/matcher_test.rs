@@ -16,6 +16,7 @@ struct Resource {
     bool: bool,
     multi_simple_value: Vec<String>,
     multi_simple_value_numbers: Vec<u32>,
+    nested_multi_value: Vec<SubResource>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -40,6 +41,16 @@ impl Resource {
             bool: true,
             multi_simple_value: vec![a.to_string(), b.to_string(), c.to_string()],
             multi_simple_value_numbers: vec![1, 2, 3],
+            nested_multi_value: vec![
+                SubResource {
+                    first: "test-first1".to_string(),
+                    second: "test-second1".to_string(),
+                },
+                SubResource {
+                    first: "test-first2".to_string(),
+                    second: "test-second2".to_string(),
+                },
+            ],
         }
     }
 }
@@ -82,6 +93,8 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("multi_simple_value_numbers ge 3"; "simple multi-valued attribute with greaterEqual")]
 #[test_case("multi_simple_value_numbers lt 2"; "simple multi-valued attribute with lessThan")]
 #[test_case("multi_simple_value_numbers le 1"; "simple multi-valued attribute with lessThanEqual")]
+#[test_case("nested_multi_value.first eq \"test-first1\""; "nested multi-valued attribute with eq")]
+#[test_case("nested_multi_value.first ne \"test-firstZ\""; "nested multi-valued attribute with ne")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
@@ -108,6 +121,7 @@ fn match_ok_with_one_resource(filter: &str) {
 #[test_case("multi_simple_value_numbers ge 4"; "simple multi-valued attribute with greaterEqual")]
 #[test_case("multi_simple_value_numbers lt 1"; "simple multi-valued attribute with lessThan")]
 #[test_case("multi_simple_value_numbers le 0"; "simple multi-valued attribute with lessThanEqual")]
+#[test_case("nested_multi_value.first eq \"ZZZZZ\""; "complex multi-valued attribute with eq")]
 fn match_none_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
