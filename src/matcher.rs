@@ -34,16 +34,17 @@ where
     })
 }
 
-impl<'a> Expression<'a> {
+impl<'a> Filter<'a> {
     fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
         match self {
-            Expression::Attribute(attribute_expression) => {
+            Filter::Attribute(attribute_expression) => {
                 attribute_expression.do_match(prefix, resource)
             }
-            Expression::Logical(logical_expression) => {
-                logical_expression.do_match(prefix, resource)
-            }
-            Expression::Group(group_expression) => group_expression.do_match(prefix, resource),
+            Filter::Logical(logical_expression) => logical_expression.do_match(prefix, resource),
+            Filter::Group(group_expression) => group_expression.do_match(prefix, resource),
+            Filter::Not(sub_expression) => sub_expression
+                .do_match(prefix, resource)
+                .map(std::ops::Not::not),
         }
     }
 }
@@ -51,9 +52,9 @@ impl<'a> Expression<'a> {
 impl<'a> AttributeExpression<'a> {
     pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
         match self {
-            AttributeExpression::Complex(ComplexData {
-                attribute,
-                expression,
+            AttributeExpression::ValuePath(ValuePathData {
+                attribute_path: attribute,
+                value_filter: expression,
             }) => expression.do_match(Some(attribute), resource),
             AttributeExpression::Simple(SimpleData {
                 expression_operator,
@@ -76,7 +77,7 @@ impl<'a> AttributeExpression<'a> {
 
     fn full_attribute_name(&self, prefix: Option<&str>) -> String {
         match self {
-            AttributeExpression::Complex(_) => unimplemented!(),
+            AttributeExpression::ValuePath(_) => unimplemented!(),
             AttributeExpression::Simple(SimpleData { attribute, .. }) => prefix
                 .map(|p| format!("{}.{}", p, attribute))
                 .unwrap_or(attribute.to_string()),
@@ -145,10 +146,7 @@ impl<'a> LogicalExpression<'a> {
 
 impl<'a> GroupExpression<'a> {
     pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
-        let mut content_match = self.content.do_match(prefix, resource.clone())?;
-        if self.not {
-            content_match = !content_match;
-        }
+        let content_match = self.content.do_match(prefix, resource.clone())?;
         match (content_match, &self.operator) {
             (false, _) => Ok(false),
             (true, None) => Ok(true),

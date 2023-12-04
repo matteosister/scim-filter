@@ -14,6 +14,8 @@ use nom::{Finish, IResult, Parser};
 use rust_decimal::Decimal as RustDecimal;
 
 use crate::error::Error;
+use crate::parser::model::Filter::Not;
+
 pub mod model;
 
 #[cfg(test)]
@@ -22,8 +24,8 @@ mod parser_test;
 
 /// main API entrance for this module, given a filter string,
 /// it generates an Result with a possible parsed Expression struct
-pub(crate) fn scim_filter_parser(input: &str) -> Result<Expression, Error> {
-    let (remain, expression) = expression(input).map_err(|e| e.to_owned()).finish()?;
+pub(crate) fn scim_filter_parser(input: &str) -> Result<Filter, Error> {
+    let (remain, expression) = filter(input).map_err(|e| e.to_owned()).finish()?;
     if !remain.is_empty() {
         return Err(Error::WrongFilterFormat(
             input.to_owned(),
@@ -63,12 +65,12 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
         map(
             tuple((
                 ws(parse_attribute),
-                delimited(char('['), ws(expression), char(']')),
+                delimited(char('['), ws(filter), char(']')),
             )),
             |(attribute, expression)| {
-                AttributeExpression::Complex(ComplexData {
-                    attribute,
-                    expression: Box::new(expression),
+                AttributeExpression::ValuePath(ValuePathData {
+                    attribute_path: attribute,
+                    value_filter: Box::new(expression),
                 })
             },
         ),
@@ -77,9 +79,9 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
 
 fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
     let (input, (left, logical_operator, right)) = tuple((
-        map(ws(attribute_expression), Expression::Attribute),
+        map(ws(attribute_expression), Filter::Attribute),
         ws(logical_operator),
-        ws(expression),
+        ws(filter),
     ))(input)?;
 
     Ok((
@@ -93,16 +95,14 @@ fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
 }
 
 fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
-    let (input, (not, content, operator, rest)) = tuple((
-        opt(value(true, ws(tag("not")))),
-        (delimited(char('('), expression, char(')'))),
+    let (input, (content, operator, rest)) = tuple((
+        (delimited(char('('), ws(filter), char(')'))),
         opt(ws(logical_operator)),
-        opt(expression),
+        opt(filter),
     ))(input)?;
     Ok((
         input,
         GroupExpression {
-            not: not.unwrap_or(false),
             content: Box::new(content),
             operator,
             rest: rest.map(Box::new),
@@ -110,11 +110,17 @@ fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
     ))
 }
 
-pub(crate) fn expression(input: &str) -> IResult<&str, Expression> {
+fn not_expression(input: &str) -> IResult<&str, Filter> {
+    let (input, (_, content)) = tuple((ws(tag("not")), filter))(input)?;
+    Ok((input, Not(Box::new(content))))
+}
+
+pub fn filter(input: &str) -> IResult<&str, Filter> {
     alt((
-        map(logical_expression, Expression::Logical),
-        map(attribute_expression, Expression::Attribute),
-        map(group_expression, Expression::Group),
+        map(logical_expression, Filter::Logical),
+        map(attribute_expression, Filter::Attribute),
+        map(group_expression, Filter::Group),
+        not_expression,
     ))
     .parse(input)
 }

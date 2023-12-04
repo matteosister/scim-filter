@@ -1,6 +1,6 @@
 mod error;
 mod matcher;
-mod parser;
+pub mod parser;
 
 pub use error::Error;
 pub use matcher::scim_filter;

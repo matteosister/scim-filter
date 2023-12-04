@@ -6,37 +6,38 @@ use rust_decimal::Decimal as RustDecimal;
 /// The main entry point for the parsing model.
 /// This is a recursive struct to account for the possible recursive filter specification.
 #[derive(Debug, PartialEq)]
-pub(crate) enum Expression<'a> {
+pub enum Filter<'a> {
     Attribute(AttributeExpression<'a>),
     Logical(LogicalExpression<'a>),
     Group(GroupExpression<'a>),
+    Not(Box<Filter<'a>>),
 }
 
 /// An attribute expression.
 /// It can be either:
-///   - Complex like `emails[type eq "work" and value co "@example.com"]`
+///   - ValuePath like `emails[type eq "work" and value co "@example.com"]`
 ///   - Simple like `userName eq "ringo"`
 ///   - Present like `userName pr"`
 #[derive(Debug, PartialEq)]
-pub(crate) enum AttributeExpression<'a> {
-    Complex(ComplexData<'a>),
+pub enum AttributeExpression<'a> {
+    ValuePath(ValuePathData<'a>),
     Simple(SimpleData<'a>),
     Present(&'a str),
 }
 
 /// Parsed data for Complex Attribute Expression
 #[derive(Debug, PartialEq)]
-pub(crate) struct ComplexData<'a> {
-    pub(crate) attribute: &'a str,
-    pub(crate) expression: Box<Expression<'a>>,
+pub struct ValuePathData<'a> {
+    pub attribute_path: &'a str,
+    pub value_filter: Box<Filter<'a>>,
 }
 
 /// Parsed data for Simple Attribute Expression
 #[derive(Debug, PartialEq)]
-pub(crate) struct SimpleData<'a> {
-    pub(crate) attribute: &'a str,
-    pub(crate) expression_operator: ExpressionOperatorComparison,
-    pub(crate) value: Value<'a>,
+pub struct SimpleData<'a> {
+    pub attribute: &'a str,
+    pub expression_operator: ExpressionOperatorComparison,
+    pub value: Value<'a>,
 }
 
 /// A parsed Value.
@@ -63,25 +64,26 @@ pub enum Value<'a> {
 /// A logical expression in the form of xxx (and|or) yyy
 /// This is a recursion node, since xxx and yyy could also be expressions
 #[derive(Debug, PartialEq)]
-pub(crate) struct LogicalExpression<'a> {
-    pub(crate) left: Box<Expression<'a>>,
+pub struct LogicalExpression<'a> {
+    pub(crate) left: Box<Filter<'a>>,
     pub(crate) operator: LogicalOperator,
-    pub(crate) right: Box<Expression<'a>>,
+    pub(crate) right: Box<Filter<'a>>,
 }
 
 /// A group expression in the form of `(singer eq "john" and bassist = "paul")`
-/// This is a recursion node, since everything inside parens could be an expression
+/// After the group there is an optional operator and an optional "rest" of the expression
+/// `e.g. (singer eq "john" and bassist = "paul") and drummer sw "ring"`
+/// This is a recursion node, since everything inside parens is an expression
 #[derive(Debug, PartialEq)]
-pub(crate) struct GroupExpression<'a> {
-    pub(crate) not: bool,
-    pub(crate) content: Box<Expression<'a>>,
-    pub(crate) operator: Option<LogicalOperator>,
-    pub(crate) rest: Option<Box<Expression<'a>>>,
+pub struct GroupExpression<'a> {
+    pub content: Box<Filter<'a>>,
+    pub operator: Option<LogicalOperator>,
+    pub rest: Option<Box<Filter<'a>>>,
 }
 
 /// The logical operator `And` or `Or`
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) enum LogicalOperator {
+pub enum LogicalOperator {
     And,
     Or,
 }

@@ -8,16 +8,16 @@ fn gen_attribute_expression<'a>(
     attribute: &'a str,
     expression_operator_comparison: ExpressionOperatorComparison,
     value: &'a str,
-) -> Expression<'a> {
-    Expression::Attribute(AttributeExpression::Simple(SimpleData {
+) -> Filter<'a> {
+    Filter::Attribute(AttributeExpression::Simple(SimpleData {
         attribute,
         expression_operator: expression_operator_comparison,
         value: Value::String(value),
     }))
 }
 
-fn gen_attribute_expression_pr(attribute: &str) -> Expression {
-    Expression::Attribute(AttributeExpression::Present(attribute))
+fn gen_attribute_expression_pr(attribute: &str) -> Filter {
+    Filter::Attribute(AttributeExpression::Present(attribute))
 }
 
 #[test]
@@ -33,9 +33,8 @@ fn attribute_expression_test() {
 fn expression_with_parens_at_the_beginning() {
     let parsed = scim_filter_parser("(a eq \"test\" or b pr) and c pr");
     assert_eq!(
-        (Expression::Group(GroupExpression {
-            not: false,
-            content: Box::new(Expression::Logical(LogicalExpression {
+        (Filter::Group(GroupExpression {
+            content: Box::new(Filter::Logical(LogicalExpression {
                 left: Box::new(gen_attribute_expression("a", Equal, "test")),
                 operator: Or,
                 right: Box::new(gen_attribute_expression_pr("b")),
@@ -51,7 +50,7 @@ fn expression_with_parens_at_the_beginning() {
 fn logical_expression_test() {
     let parsed = scim_filter_parser("a eq \"test\" and b eq \"test2\"");
     assert_eq!(
-        (Expression::Logical(LogicalExpression {
+        (Filter::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
             operator: LogicalOperator::And,
             right: Box::new(gen_attribute_expression("b", Equal, "test2")),
@@ -64,7 +63,7 @@ fn logical_expression_test() {
 fn logical_expression_or_test() {
     let parsed = scim_filter_parser("a eq \"test\" or b eq \"test2\"");
     assert_eq!(
-        (Expression::Logical(LogicalExpression {
+        (Filter::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
             operator: LogicalOperator::Or,
             right: Box::new(gen_attribute_expression("b", Equal, "test2")),
@@ -77,10 +76,10 @@ fn logical_expression_or_test() {
 fn logical_expression_with_more_than_1_and() {
     let parsed = scim_filter_parser("a eq \"test\" and b ne \"test2\" and c co \"test3\"");
     assert_eq!(
-        (Expression::Logical(LogicalExpression {
+        (Filter::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
             operator: LogicalOperator::And,
-            right: Box::new(Expression::Logical(LogicalExpression {
+            right: Box::new(Filter::Logical(LogicalExpression {
                 left: Box::new(gen_attribute_expression("b", NotEqual, "test2")),
                 operator: LogicalOperator::And,
                 right: Box::new(gen_attribute_expression("c", Contains, "test3")),
@@ -94,10 +93,10 @@ fn logical_expression_with_more_than_1_and() {
 fn logical_expression_with_more_than_2_and_mixed() {
     let parsed = scim_filter_parser("a eq \"test\" and b ne \"test2\" or c eq \"test3\"");
     assert_eq!(
-        (Expression::Logical(LogicalExpression {
+        (Filter::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
             operator: LogicalOperator::And,
-            right: Box::new(Expression::Logical(LogicalExpression {
+            right: Box::new(Filter::Logical(LogicalExpression {
                 left: Box::new(gen_attribute_expression("b", NotEqual, "test2")),
                 operator: LogicalOperator::Or,
                 right: Box::new(gen_attribute_expression("c", Equal, "test3")),
@@ -111,12 +110,11 @@ fn logical_expression_with_more_than_2_and_mixed() {
 fn logical_expression_with_parens() {
     let parsed = scim_filter_parser("a eq \"test\" and (b ne \"test2\" or c eq \"test3\")");
     assert_eq!(
-        (Expression::Logical(LogicalExpression {
+        (Filter::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("a", Equal, "test")),
             operator: And,
-            right: Box::new(Expression::Group(GroupExpression {
-                not: false,
-                content: Box::new(Expression::Logical(LogicalExpression {
+            right: Box::new(Filter::Group(GroupExpression {
+                content: Box::new(Filter::Logical(LogicalExpression {
                     left: Box::new(gen_attribute_expression("b", NotEqual, "test2")),
                     operator: Or,
                     right: Box::new(gen_attribute_expression("c", Equal, "test3")),
@@ -130,17 +128,42 @@ fn logical_expression_with_parens() {
 }
 
 #[test]
+fn logical_expression_with_parens_2() {
+    let parsed = scim_filter_parser(
+        "(a sw \"test\" or b eq \"test2\") and (c ne \"test3\" or d ew \"test4\")",
+    );
+    assert_eq!(
+        (Filter::Group(GroupExpression {
+            content: Box::new(Filter::Logical(LogicalExpression {
+                left: Box::new(gen_attribute_expression("a", StartsWith, "test")),
+                operator: Or,
+                right: Box::new(gen_attribute_expression("b", Equal, "test2")),
+            })),
+            operator: Some(And),
+            rest: Some(Box::new(Filter::Group(GroupExpression {
+                content: Box::new(Filter::Logical(LogicalExpression {
+                    left: Box::new(gen_attribute_expression("c", NotEqual, "test3")),
+                    operator: Or,
+                    right: Box::new(gen_attribute_expression("d", EndsWith, "test4")),
+                })),
+                operator: None,
+                rest: None,
+            }))),
+        })),
+        parsed.unwrap()
+    );
+}
+
+#[test]
 fn nested_parens() {
     let parsed = scim_filter_parser("(a pr and (b pr or c pr))");
     assert_eq!(
-        (Expression::Group(GroupExpression {
-            not: false,
-            content: Box::new(Expression::Logical(LogicalExpression {
+        (Filter::Group(GroupExpression {
+            content: Box::new(Filter::Logical(LogicalExpression {
                 left: Box::new(gen_attribute_expression_pr("a")),
                 operator: LogicalOperator::And,
-                right: Box::new(Expression::Group(GroupExpression {
-                    not: false,
-                    content: Box::new(Expression::Logical(LogicalExpression {
+                right: Box::new(Filter::Group(GroupExpression {
+                    content: Box::new(Filter::Logical(LogicalExpression {
                         left: Box::new(gen_attribute_expression_pr("b")),
                         operator: LogicalOperator::Or,
                         right: Box::new(gen_attribute_expression_pr("c")),
@@ -163,13 +186,13 @@ fn complex_attributes() {
     );
 
     assert_eq!(
-        Expression::Logical(LogicalExpression {
+        Filter::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("userType", Equal, "Employee")),
             operator: LogicalOperator::And,
-            right: Box::new(Expression::Attribute(AttributeExpression::Complex(
-                ComplexData {
-                    attribute: "emails",
-                    expression: Box::new(Expression::Logical(LogicalExpression {
+            right: Box::new(Filter::Attribute(AttributeExpression::ValuePath(
+                ValuePathData {
+                    attribute_path: "emails",
+                    value_filter: Box::new(Filter::Logical(LogicalExpression {
                         left: Box::new(gen_attribute_expression("type", Equal, "work")),
                         operator: And,
                         right: Box::new(gen_attribute_expression(
@@ -192,12 +215,11 @@ fn not_expressions() {
     );
 
     assert_eq!(
-        Expression::Logical(LogicalExpression {
+        Filter::Logical(LogicalExpression {
             left: Box::new(gen_attribute_expression("userType", NotEqual, "Employee")),
             operator: LogicalOperator::And,
-            right: Box::new(Expression::Group(GroupExpression {
-                not: true,
-                content: Box::new(Expression::Logical(LogicalExpression {
+            right: Box::new(Filter::Not(Box::new(Filter::Group(GroupExpression {
+                content: Box::new(Filter::Logical(LogicalExpression {
                     left: Box::new(gen_attribute_expression("emails", Contains, "example.com")),
                     operator: LogicalOperator::Or,
                     right: Box::new(gen_attribute_expression(
@@ -208,7 +230,7 @@ fn not_expressions() {
                 })),
                 operator: None,
                 rest: None,
-            })),
+            })))),
         }),
         parsed.unwrap()
     );
