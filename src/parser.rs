@@ -6,7 +6,7 @@ use model::*;
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take, take_while};
 use nom::character::complete::{alpha1, alphanumeric1, char, multispace0};
-use nom::combinator::{map, map_res, opt, recognize, value};
+use nom::combinator::{map, map_res, opt, recognize, value as nom_value};
 use nom::error::ParseError;
 use nom::multi::many0_count;
 use nom::sequence::{delimited, pair, terminated, tuple};
@@ -42,14 +42,10 @@ fn logical_operator(input: &str) -> IResult<&str, LogicalOperator> {
     )(input)
 }
 
-fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
+pub fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
     alt((
         map(
-            tuple((
-                ws(parse_attribute),
-                ws(parse_comparison_operator),
-                ws(parse_value),
-            )),
+            tuple((ws(attribute_identifier), ws(comparison_operator), ws(value))),
             |(attribute, expression_operator, value)| {
                 AttributeExpression::Simple(SimpleData {
                     attribute,
@@ -59,12 +55,12 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
             },
         ),
         map(
-            terminated(ws(parse_attribute), parse_present_operator),
+            terminated(ws(attribute_identifier), present_operator),
             AttributeExpression::Present,
         ),
         map(
             tuple((
-                ws(parse_attribute),
+                ws(attribute_identifier),
                 delimited(char('['), ws(filter), char(']')),
             )),
             |(attribute, expression)| {
@@ -77,7 +73,7 @@ fn attribute_expression(input: &str) -> IResult<&str, AttributeExpression> {
     ))(input)
 }
 
-fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
+pub fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
     let (input, (left, logical_operator, right)) = tuple((
         map(ws(attribute_expression), Filter::Attribute),
         ws(logical_operator),
@@ -94,7 +90,7 @@ fn logical_expression(input: &str) -> IResult<&str, LogicalExpression> {
     ))
 }
 
-fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
+pub fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
     let (input, (content, operator, rest)) = tuple((
         (delimited(char('('), ws(filter), char(')'))),
         opt(ws(logical_operator)),
@@ -110,7 +106,7 @@ fn group_expression(input: &str) -> IResult<&str, GroupExpression> {
     ))
 }
 
-fn not_expression(input: &str) -> IResult<&str, Filter> {
+pub fn not_expression(input: &str) -> IResult<&str, Filter> {
     let (input, (_, content)) = tuple((ws(tag("not")), filter))(input)?;
     Ok((input, Not(Box::new(content))))
 }
@@ -125,22 +121,22 @@ pub fn filter(input: &str) -> IResult<&str, Filter> {
     .parse(input)
 }
 
-fn parse_attribute(input: &str) -> IResult<&str, &str> {
+pub fn attribute_identifier(input: &str) -> IResult<&str, &str> {
     recognize(pair(
         alpha1,
         many0_count(alt((alphanumeric1, tag("_"), tag("-"), tag("$"), tag(".")))),
     ))(input)
 }
 
-fn parse_comparison_operator(input: &str) -> IResult<&str, ExpressionOperatorComparison> {
+pub fn comparison_operator(input: &str) -> IResult<&str, ExpressionOperatorComparison> {
     map_res(take(2usize), ExpressionOperatorComparison::from_str)(input)
 }
 
-fn parse_present_operator(input: &str) -> IResult<&str, bool> {
-    value(true, tag("pr"))(input)
+pub fn present_operator(input: &str) -> IResult<&str, bool> {
+    nom_value(true, tag("pr"))(input)
 }
 
-fn parse_value(input: &str) -> IResult<&str, Value> {
+pub fn value(input: &str) -> IResult<&str, Value> {
     alt((
         map(
             map_res(
@@ -157,7 +153,7 @@ fn parse_value(input: &str) -> IResult<&str, Value> {
             Value::Number,
         ),
         map(
-            alt((value(true, tag("true")), value(false, tag("false")))),
+            alt((nom_value(true, tag("true")), nom_value(false, tag("false")))),
             Value::Boolean,
         ),
         map(
