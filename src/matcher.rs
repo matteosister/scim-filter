@@ -134,9 +134,7 @@ impl<'a> LogicalExpression<'a> {
         let left_match = self.left.do_match(prefix, resource.clone())?;
         if left_match && self.operator.is_or() {
             Ok(true)
-        } else if left_match && self.operator.is_and() {
-            self.right.do_match(prefix, resource)
-        } else if !left_match && self.operator.is_or() {
+        } else if (left_match && self.operator.is_and()) || (!left_match && self.operator.is_or()) {
             self.right.do_match(prefix, resource)
         } else {
             Ok(false)
