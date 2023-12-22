@@ -35,7 +35,7 @@ where
 }
 
 impl<'a> Filter<'a> {
-    fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
         match self {
             Filter::Attribute(attribute_expression) => {
                 attribute_expression.do_match(prefix, resource)

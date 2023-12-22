@@ -236,6 +236,21 @@ fn not_expressions() {
     );
 }
 
+#[test]
+fn full_attribute_name() {
+    let parsed = scim_filter_parser(
+        "schemas eq \"urn:ietf:params:scim:schemas:extension:enterprise:2.0:User\"",
+    );
+    assert_eq!(
+        gen_attribute_expression(
+            "schemas",
+            Equal,
+            "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+        ),
+        parsed.unwrap()
+    );
+}
+
 #[test_case("a eq \"test1\" and"; "and without content")]
 fn wrong_query1(input: &str) {
     let parsed = scim_filter_parser(input);
