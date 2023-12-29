@@ -1,13 +1,15 @@
-use rust_decimal::prelude::FromPrimitive;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
+use serde_json::{Value as JsonValue, Value};
 
 use crate::error::Error;
-use crate::parser::{scim_filter_parser, AttrExpData, Filter, LogExpData};
+use crate::parser::{scim_filter_parser, AttrExpData, AttrPath, CompValue, CompareOp, Filter};
+use crate::Error::InvalidResource;
 
 #[cfg(test)]
 #[path = "test/matcher_test.rs"]
 mod matcher_test;
+
+type MatcherResult<T> = Result<T, Error>;
 
 pub fn scim_filter<T>(input: &str, resources: impl IntoIterator<Item = T>) -> Result<Vec<T>, Error>
 where
@@ -17,7 +19,7 @@ where
 
     resources.into_iter().try_fold(vec![], |mut acc, resource| {
         let resource_value = serde_json::to_value(&resource)?;
-        match filter_expression.do_match(None, resource_value) {
+        match filter_expression.r#match(&resource_value) {
             Ok(true) => {
                 acc.push(resource);
                 Ok(acc)
@@ -29,90 +31,153 @@ where
 }
 
 impl<'a> Filter<'a> {
-    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+    pub fn r#match(&self, resource: &JsonValue) -> MatcherResult<bool> {
         match self {
-            Filter::AttrExp(attribute_expression_data) => {
-                attribute_expression_data.do_match(prefix, resource)
-            }
-            Filter::LogExp(logical_expression_data) => {
-                logical_expression_data.do_match(prefix, resource)
-            }
-            Filter::ValuePath(value_path_data) => value_path_data.do_match(prefix, resource),
-            Filter::SubFilter(not, filter) => {
-                filter
-                    .do_match(prefix, resource)
-                    .map(|r| if not { !r } else { r })
-            }
+            Filter::AttrExp(attr_expr_data) => attr_expr_data.r#match(resource),
+            _ => unimplemented!(),
         }
     }
 }
 
 impl<'a> AttrExpData<'a> {
-    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
+    pub fn r#match(&self, resource: &JsonValue) -> MatcherResult<bool> {
         match self {
-            Self::Present(_) => {
-                let resource_value = self.get_value(prefix, resource);
-                Ok(!resource_value.is_null())
-            }
-            Self::Compare(attr_path, compare_op, comp_value) => {
-                let resource_value = self.get_value(prefix, resource);
+            AttrExpData::Present(attr_path) => Ok(!attr_path.extract_value(resource).is_null()),
+            AttrExpData::Compare(attr_path, compare_op, comp_value) => {
+                let resource_value = attr_path.extract_value(resource);
+                comp_value.compare_with(compare_op, resource_value)
             }
         }
     }
+}
 
-    fn get_value(&self, prefix: Option<&str>, resource: JsonValue) -> JsonValue {
-        let full_attribute_name = self.full_attribute_name(prefix);
-        let sub_attributes = full_attribute_name.split('.').collect::<Vec<&str>>();
-
-        sub_attributes
-            .iter()
-            .fold((resource, None), |(value, result), attribute_name| {
-                match (value, result) {
-                    (value, None) => {
-                        // first iteration
-                        (
-                            value[attribute_name].clone(),
-                            Some(value[attribute_name].clone()),
-                        )
-                    }
-                    (value, Some(JsonValue::Null)) => (value, Some(JsonValue::Null)),
-                    (value, Some(_)) => {
-                        if value.is_array() {
-                            let values: Vec<JsonValue> = value
-                                .as_array()
-                                .unwrap()
-                                .iter()
-                                .map(|v| v[attribute_name].clone())
-                                .collect();
-                            (
-                                JsonValue::Array(values.clone()),
-                                Some(JsonValue::Array(values)),
-                            )
-                        } else {
-                            (
-                                value[attribute_name].clone(),
-                                Some(value[attribute_name].clone()),
-                            )
-                        }
-                    }
-                }
-            })
-            .1
-            .unwrap_or(JsonValue::Null)
+impl AttrPath {
+    pub fn extract_value<'a>(&self, resource: &'a JsonValue) -> &'a JsonValue {
+        let mut resource_value = &resource[&self.attr_name().0];
+        if let Some(sub_attr) = self.sub_attr() {
+            resource_value = &resource_value[&sub_attr.0];
+        }
+        resource_value
     }
 }
 
-impl<'a> LogExpData<'a> {
-    pub fn do_match(&self, prefix: Option<&str>, resource: JsonValue) -> Result<bool, Error> {
-        let left_match = self.left.do_match(prefix, resource.clone())?;
-        if left_match && self.log_exp_operator.is_or() {
-            Ok(true)
-        } else if (left_match && self.log_exp_operator.is_and())
-            || (!left_match && self.log_exp_operator.is_or())
-        {
-            self.right.do_match(prefix, resource)
-        } else {
-            Ok(false)
+impl<'a> CompValue<'a> {
+    fn compare_false(resource_value: &JsonValue, compare_op: &CompareOp) -> MatcherResult<bool> {
+        let wrong_operator_error = || Err(Error::wrong_operator(compare_op, resource_value));
+        match compare_op {
+            CompareOp::Equal => Ok(resource_value
+                .as_bool()
+                .map(|res_value| !res_value)
+                .ok_or_else(|| InvalidResource)?),
+            CompareOp::NotEqual => Ok(resource_value.as_bool().ok_or_else(|| InvalidResource)?),
+            CompareOp::Contains => wrong_operator_error(),
+            CompareOp::StartsWith => wrong_operator_error(),
+            CompareOp::EndsWith => wrong_operator_error(),
+            CompareOp::GreaterThan => wrong_operator_error(),
+            CompareOp::GreaterThanOrEqual => wrong_operator_error(),
+            CompareOp::LessThan => wrong_operator_error(),
+            CompareOp::LessThanOrEqual => wrong_operator_error(),
+        }
+    }
+
+    fn compare_true(resource_value: &JsonValue, compare_op: &CompareOp) -> MatcherResult<bool> {
+        let wrong_operator_error = || Err(Error::wrong_operator(compare_op, resource_value));
+        match compare_op {
+            CompareOp::Equal => Ok(resource_value.as_bool().ok_or_else(|| InvalidResource)?),
+            CompareOp::NotEqual => Ok(resource_value
+                .as_bool()
+                .map(|res_value| !res_value)
+                .ok_or_else(|| InvalidResource)?),
+            CompareOp::Contains => wrong_operator_error(),
+            CompareOp::StartsWith => wrong_operator_error(),
+            CompareOp::EndsWith => wrong_operator_error(),
+            CompareOp::GreaterThan => wrong_operator_error(),
+            CompareOp::GreaterThanOrEqual => wrong_operator_error(),
+            CompareOp::LessThan => wrong_operator_error(),
+            CompareOp::LessThanOrEqual => wrong_operator_error(),
+        }
+    }
+
+    fn compare_string(
+        resource_value: &JsonValue,
+        compare_op: &CompareOp,
+        comp_value: &str,
+    ) -> MatcherResult<bool> {
+        let wrong_operator_error = || Err(Error::wrong_operator(compare_op, resource_value));
+        match compare_op {
+            CompareOp::Equal => Ok(resource_value
+                .as_str()
+                .map(|res_value| res_value == comp_value)
+                .ok_or_else(|| InvalidResource)?),
+            CompareOp::NotEqual => Ok(resource_value
+                .as_str()
+                .map(|res_value| res_value != comp_value)
+                .ok_or_else(|| InvalidResource)?),
+            CompareOp::Contains => match resource_value {
+                Value::String(resource_value) => Ok(resource_value.contains(comp_value)),
+                Value::Array(arr) => Ok(arr
+                    .iter()
+                    .filter_map(|value| value.as_str())
+                    .collect::<Vec<&str>>()
+                    .contains(&comp_value)),
+                _ => wrong_operator_error(),
+            },
+            CompareOp::StartsWith => Ok(resource_value
+                .as_str()
+                .map(|res_value| res_value.starts_with(comp_value))
+                .ok_or_else(|| InvalidResource)?),
+            CompareOp::EndsWith => match resource_value {
+                Value::String(resource_value) => Ok(resource_value.ends_with(comp_value)),
+                Value::Array(arr) => Ok(arr
+                    .iter()
+                    .filter_map(|value| value.as_str())
+                    .find(|v| v.ends_with(comp_value))
+                    .is_some()),
+                _ => wrong_operator_error(),
+            },
+            CompareOp::GreaterThan => match resource_value {
+                Value::String(resource_value) => Ok(resource_value.as_str() > comp_value),
+                Value::Array(arr) => Ok(arr
+                    .iter()
+                    .filter_map(|value| value.as_str())
+                    .find(|v| *v > comp_value)
+                    .is_some()),
+                _ => wrong_operator_error(),
+            },
+            CompareOp::GreaterThanOrEqual => match resource_value {
+                Value::String(resource_value) => Ok(resource_value.as_str() >= comp_value),
+                Value::Array(arr) => Ok(arr
+                    .iter()
+                    .filter_map(|value| value.as_str())
+                    .find(|v| *v >= comp_value)
+                    .is_some()),
+                _ => wrong_operator_error(),
+            },
+            CompareOp::LessThan => Ok(resource_value
+                .as_str()
+                .map(|res_value| res_value < comp_value)
+                .ok_or_else(|| InvalidResource)?),
+            CompareOp::LessThanOrEqual => Ok(resource_value
+                .as_str()
+                .map(|res_value| res_value <= comp_value)
+                .ok_or_else(|| InvalidResource)?),
+        }
+    }
+
+    pub fn compare_with(
+        &self,
+        compare_op: &CompareOp,
+        resource_value: &JsonValue,
+    ) -> MatcherResult<bool> {
+        dbg!("comparing: {} {} {}", resource_value, compare_op, self);
+        match self {
+            CompValue::False => Self::compare_false(resource_value, compare_op),
+            CompValue::Null => unimplemented!(),
+            CompValue::True => Self::compare_true(resource_value, compare_op),
+            CompValue::Number(_) => unimplemented!(),
+            CompValue::String(comp_value) => {
+                Self::compare_string(resource_value, compare_op, comp_value)
+            }
         }
     }
 }

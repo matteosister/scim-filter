@@ -6,7 +6,7 @@ use nom::character::complete::{alpha1, alphanumeric1, char, digit1, space0, spac
 use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, pair, preceded, separated_pair, terminated, tuple};
-use nom::{Finish, IResult, Parser};
+use nom::{Finish, IResult};
 use rust_decimal::Decimal;
 
 use crate::parser::Filter::{LogExp, ValuePath};
@@ -46,7 +46,7 @@ pub enum AttrExpData<'a> {
 }
 
 #[derive(Debug)]
-struct AttrPath {
+pub struct AttrPath {
     uri: Option<Uri>,
     attr_name: AttrName,
     sub_attr: Option<SubAttr>,
@@ -60,9 +60,18 @@ impl AttrPath {
             sub_attr,
         }
     }
+    pub fn uri(&self) -> &Option<Uri> {
+        &self.uri
+    }
+    pub fn attr_name(&self) -> &AttrName {
+        &self.attr_name
+    }
+    pub fn sub_attr(&self) -> &Option<SubAttr> {
+        &self.sub_attr
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum CompareOp {
     Equal,
     NotEqual,
@@ -98,7 +107,7 @@ impl FromStr for CompareOp {
 type Uri = String;
 
 #[derive(Debug)]
-struct AttrName(String);
+pub struct AttrName(pub(crate) String);
 
 impl AttrName {
     pub fn new<'a>((initial, name_chars): (Alpha<'a>, Vec<NameChar<'a>>)) -> Self {
@@ -118,7 +127,7 @@ type SubAttr = AttrName;
 
 // https://datatracker.ietf.org/doc/html/rfc7159
 #[derive(Clone, Debug)]
-enum CompValue<'a> {
+pub enum CompValue<'a> {
     False,
     Null,
     True,
@@ -163,7 +172,7 @@ impl LogExpOperator {
 }
 
 #[derive(Debug)]
-struct ValuePathData<'a> {
+pub struct ValuePathData<'a> {
     attr_path: AttrPath,
     val_filter: ValFilter<'a>,
 }
@@ -174,6 +183,12 @@ impl<'a> ValuePathData<'a> {
             attr_path,
             val_filter,
         }
+    }
+    pub fn attr_path(&self) -> &AttrPath {
+        &self.attr_path
+    }
+    pub fn val_filter(&self) -> &ValFilter<'a> {
+        &self.val_filter
     }
 }
 

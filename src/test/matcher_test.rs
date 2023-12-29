@@ -66,6 +66,7 @@ fn example_resources2() -> Vec<Resource> {
     ]
 }
 
+#[test_case("bool eq true"; "one resource do match with equals boolean")]
 #[test_case("a eq \"test1\""; "one resource do match with equals")]
 #[test_case("b co \"est\""; "one resource do match with correct contains")]
 #[test_case("b sw \"te\""; "one resource do match with correct starts with")]
