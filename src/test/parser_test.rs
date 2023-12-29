@@ -1,8 +1,6 @@
 use test_case::test_case;
 
 use super::*;
-use crate::parser::ExpressionOperatorComparison::*;
-use crate::parser::LogicalOperator::*;
 
 fn gen_attribute_expression<'a>(
     attribute: &'a str,
