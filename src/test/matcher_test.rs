@@ -14,9 +14,11 @@ struct Resource {
     decimal: rust_decimal::Decimal,
     number: u32,
     bool: bool,
+    bool_false: bool,
     multi_simple_value: Vec<String>,
     multi_simple_value_numbers: Vec<u32>,
     nested_multi_value: Vec<SubResource>,
+    multi_bool_value: Vec<bool>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -39,6 +41,7 @@ impl Resource {
             decimal: rust_decimal::Decimal::new(102, 1),
             number: 42,
             bool: true,
+            bool_false: false,
             multi_simple_value: vec![a.to_string(), b.to_string(), c.to_string()],
             multi_simple_value_numbers: vec![1, 2, 3],
             nested_multi_value: vec![
@@ -51,6 +54,7 @@ impl Resource {
                     second: "test-second2".to_string(),
                 },
             ],
+            multi_bool_value: vec![true, true, true],
         }
     }
 }
@@ -97,6 +101,14 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("multi_simple_value_numbers le 1"; "simple multi-valued attribute with lessThanEqual")]
 #[test_case("nested_multi_value.first eq \"test-first1\""; "nested multi-valued attribute with eq")]
 #[test_case("nested_multi_value.first ne \"test-firstZ\""; "nested multi-valued attribute with ne")]
+#[test_case("number eq 42"; "number match on single value")]
+#[test_case("multi_bool_value eq true"; "bool multi-valued attribute with Equal")]
+#[test_case("multi_bool_value ne false"; "bool multi-valued attribute with NotEqual")]
+#[test_case("bool eq true"; "bool(true) single-valued attribute with Equal")]
+#[test_case("bool ne false"; "bool(true) single-valued attribute with NotEqual")]
+#[test_case("bool_false eq false"; "bool(false) single-valued attribute with Equal")]
+#[test_case("bool_false ne true"; "bool(false) single-valued attribute with NotEqual")]
+#[test_case("nested_multi_value[first eq \"test-first1\"]"; "ValueFilter with search match")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);

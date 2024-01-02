@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 
-use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::parser::CompareOp;
@@ -26,20 +25,26 @@ pub enum Error {
 
     #[error("You tried applying the operator {0} on a value of type {1}, which is impossible")]
     WrongOperator(CompareOp, String),
+
+    #[error("I tried parsing a boolean from the resource, but got {0} which seems to be wrong.")]
+    MalformedBoolean(String),
+
+    #[error("I tried parsing a number from the resource, but got {0} which seems to be wrong.")]
+    MalformedNumber(String),
+
+    #[error("I tried parsing a string from the resource, but got {0} which seems to be wrong.")]
+    MalformedString(String),
+
+    #[error("I tried parsing a datetime from the resource, but got {0} which seems to be wrong. Format should be in rfc3339 format, something like \"2011-05-13T04:42:34Z\"")]
+    MalformedDatetime(String),
+
+    #[error("The resource value extracted from the attribute name given is not a valid value. Careful! Valid values are strings, numbers, boolean and null. Arrays and Objects are not.")]
+    InvalidComparisonValue(String),
 }
 
 impl Error {
-    pub fn wrong_operator(compare_op: &CompareOp, resource: &JsonValue) -> Self {
-        let resource_type = match resource {
-            JsonValue::Null => "null",
-            JsonValue::Bool(_) => "boolean",
-            JsonValue::Number(_) => "number",
-            JsonValue::String(_) => "string",
-            JsonValue::Array(_) => unreachable!(),
-            JsonValue::Object(_) => unreachable!(),
-        };
-
-        Self::WrongOperator(*compare_op, resource_type.to_string())
+    pub fn wrong_operator(compare_op: &CompareOp, resource: impl ToString) -> Self {
+        Self::WrongOperator(*compare_op, resource.to_string())
     }
 }
 
