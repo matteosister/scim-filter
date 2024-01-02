@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-use crate::parser::{CompValue, CompareOp};
+use crate::parser::CompareOp;
 
 #[derive(Debug, Error)]
 pub enum Error {
