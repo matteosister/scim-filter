@@ -14,9 +14,11 @@ struct Resource {
     decimal: rust_decimal::Decimal,
     number: u32,
     bool: bool,
+    bool_false: bool,
     multi_simple_value: Vec<String>,
     multi_simple_value_numbers: Vec<u32>,
     nested_multi_value: Vec<SubResource>,
+    multi_bool_value: Vec<bool>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -39,6 +41,7 @@ impl Resource {
             decimal: rust_decimal::Decimal::new(102, 1),
             number: 42,
             bool: true,
+            bool_false: false,
             multi_simple_value: vec![a.to_string(), b.to_string(), c.to_string()],
             multi_simple_value_numbers: vec![1, 2, 3],
             nested_multi_value: vec![
@@ -51,6 +54,7 @@ impl Resource {
                     second: "test-second2".to_string(),
                 },
             ],
+            multi_bool_value: vec![true, true, true],
         }
     }
 }
@@ -66,6 +70,7 @@ fn example_resources2() -> Vec<Resource> {
     ]
 }
 
+#[test_case("bool eq true"; "one resource do match with equals boolean")]
 #[test_case("a eq \"test1\""; "one resource do match with equals")]
 #[test_case("b co \"est\""; "one resource do match with correct contains")]
 #[test_case("b sw \"te\""; "one resource do match with correct starts with")]
@@ -78,12 +83,13 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("(a eq \"test1\" or b eq \"test3\") and c pr"; "complex filter 1")]
 #[test_case("datetime gt \"2020-01-01T10:10:10Z\""; "filter with date that should match")]
 #[test_case("decimal gt 9.1"; "filter with decimal")]
-#[test_case("a eq \"test1\" and subresource[first co \"test-\" and second co \"test-\"]"; "filter with complex attribute match")]
-#[test_case("a eq \"test1\" and subresource[first sw \"test-\"]"; "filter with complex attribute and one single expression")]
+#[test_case("a eq \"test1\" and sub_resource[first co \"test-\" and second co \"test-\"]"; "filter with complex attribute match")]
+#[test_case("a eq \"test1\" and sub_resource[first sw \"test-\"]"; "filter with complex attribute and one single expression")]
 #[test_case("a gt \"tess\""; "GreaterThan on strings")]
 #[test_case("a ge \"tess\" and not (datetime lt \"2020-01-01T10:10:10Z\")"; "not expression")]
 #[test_case("multi_simple_value eq \"test1\""; "simple multi-valued attribute")]
 #[test_case("multi_simple_value ne \"testZ\""; "simple multi-valued attribute with ne")]
+#[test_case("multi_simple_value ne \"test1\""; "simple multi-valued attribute with ne works")]
 #[test_case("multi_simple_value co \"test1\""; "simple multi-valued attribute with contains")]
 #[test_case("multi_simple_value sw \"tes\""; "simple multi-valued attribute with startsWith")]
 #[test_case("multi_simple_value ew \"st1\""; "simple multi-valued attribute with endsWith")]
@@ -95,6 +101,20 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("multi_simple_value_numbers le 1"; "simple multi-valued attribute with lessThanEqual")]
 #[test_case("nested_multi_value.first eq \"test-first1\""; "nested multi-valued attribute with eq")]
 #[test_case("nested_multi_value.first ne \"test-firstZ\""; "nested multi-valued attribute with ne")]
+#[test_case("number eq 42"; "number match on single value")]
+#[test_case("multi_bool_value eq true"; "bool multi-valued attribute with Equal")]
+#[test_case("multi_bool_value ne false"; "bool multi-valued attribute with NotEqual")]
+#[test_case("bool eq true"; "bool(true) single-valued attribute with Equal")]
+#[test_case("bool ne false"; "bool(true) single-valued attribute with NotEqual")]
+#[test_case("bool_false eq false"; "bool(false) single-valued attribute with Equal")]
+#[test_case("bool_false ne true"; "bool(false) single-valued attribute with NotEqual")]
+#[test_case("nested_multi_value[first eq \"test-first1\"]"; "ValueFilter with search match")]
+#[test_case("nested_multi_value[first eq \"test-first1\" and not(second eq \"test-second3\")]"; "ValueFilter with search match and logical expression")]
+#[test_case("nested_multi_value[not(first eq \"nonono\")]"; "ValueFilter with search match and sub-filter")]
+#[test_case("number ne 10"; "not equal with number")]
+#[test_case("not (number co 10)"; "contains with number")]
+#[test_case("not (number sw 10)"; "starts with with number")]
+#[test_case("not (number ew 10)"; "ends with with number")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
@@ -111,7 +131,6 @@ fn match_ok_with_one_resource(filter: &str) {
 #[test_case("datetime gt \"2022-01-01T10:10:10Z\""; "filter with date")]
 #[test_case("a eq \"test1\" and sub_resource[first co \"test-\" and second ew \"test-\"]"; "filter with complex attribute should not match")]
 #[test_case("multi_simple_value eq \"ZZZ\""; "simple multi-valued attribute")]
-#[test_case("multi_simple_value ne \"test1\""; "simple multi-valued attribute with ne")]
 #[test_case("multi_simple_value co \"ZZZ\""; "simple multi-valued attribute with contains")]
 #[test_case("multi_simple_value sw \"ZZZ\""; "simple multi-valued attribute with startsWith")]
 #[test_case("multi_simple_value ew \"stZ\""; "simple multi-valued attribute with endsWith")]
@@ -122,26 +141,11 @@ fn match_ok_with_one_resource(filter: &str) {
 #[test_case("multi_simple_value_numbers lt 1"; "simple multi-valued attribute with lessThan")]
 #[test_case("multi_simple_value_numbers le 0"; "simple multi-valued attribute with lessThanEqual")]
 #[test_case("nested_multi_value.first eq \"ZZZZZ\""; "complex multi-valued attribute with eq")]
-fn match_none_with_one_resource(filter: &str) {
-    let resources = example_resources();
-    let res = scim_filter(filter, resources);
-
-    assert_eq!(Vec::<Resource>::new(), res.unwrap());
-}
-
-#[test_case("a eq true"; "equals string with boolean")]
-#[test_case("a gt true"; "greater_than string with boolean")]
-#[test_case("a eq \"2022-01-01T10:10:10Z\""; "equals string with datetime")]
-#[test_case("a eq 19.2"; "equals string with decimal")]
-#[test_case("a eq 11"; "equals string with integer")]
+#[test_case("nested_multi_value.nonExistent eq \"ZZZZZ\""; "nested non-existent multi-valued attribute")]
 #[test_case("bool eq \"test\""; "equals boolean with string")]
 #[test_case("bool eq \"2022-01-01T10:10:10Z\""; "equals boolean with datetime")]
 #[test_case("bool eq 19.2"; "equals boolean with decimal")]
 #[test_case("bool eq 11"; "equals boolean with integer")]
-#[test_case("bool gt true"; "greater_than on bool")]
-#[test_case("bool ge true"; "greater_than_equal on bool")]
-#[test_case("bool lt true"; "less_than on bool")]
-#[test_case("bool le true"; "less_than_equal on bool")]
 #[test_case("datetime eq \"test\""; "equals datetime with string")]
 #[test_case("datetime eq true"; "equals datetime with boolean")]
 #[test_case("datetime eq 19.2"; "equals datetime with decimal")]
@@ -150,6 +154,22 @@ fn match_none_with_one_resource(filter: &str) {
 #[test_case("decimal eq true"; "equals decimal with boolean")]
 #[test_case("decimal eq \"2022-01-01T10:10:10Z\""; "equals decimal with datetime")]
 #[test_case("decimal ew \"test\""; "equals decimal do not work with EndsWith")]
+#[test_case("a eq 19.2"; "equals string with decimal")]
+#[test_case("a eq 11"; "equals string with integer")]
+#[test_case("a eq true"; "equals string with boolean")]
+#[test_case("a eq \"2022-01-01T10:10:10Z\""; "equals string with datetime")]
+fn match_none_with_one_resource(filter: &str) {
+    let resources = example_resources();
+    let res = scim_filter(filter, resources);
+
+    assert_eq!(Vec::<Resource>::new(), res.unwrap());
+}
+
+#[test_case("bool gt true"; "greater_than on bool")]
+#[test_case("bool ge true"; "greater_than_equal on bool")]
+#[test_case("bool lt true"; "less_than on bool")]
+#[test_case("bool le true"; "less_than_equal on bool")]
+#[test_case("a gt true"; "greater_than string with boolean")]
 fn invalid_filter(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
