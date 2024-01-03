@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::str::FromStr;
 
 use nom::Finish;
@@ -100,6 +101,14 @@ impl AttrName {
     #[cfg(test)]
     pub fn from_str<'a>(name: &str) -> Self {
         Self(name.to_string())
+    }
+}
+
+impl Deref for AttrName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_str()
     }
 }
 
