@@ -113,6 +113,7 @@ impl<'a> LogExpData<'a> {
     pub fn r#match(&self, resource: &JsonValue) -> MatcherResult<bool> {
         // check if the left side is a match
         let left_match = self.left.r#match(resource)?;
+
         // if it is, and the operator is an or, no need to check for the right side
         if left_match && self.log_exp_operator.is_or() {
             Ok(true)

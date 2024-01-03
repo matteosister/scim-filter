@@ -109,6 +109,12 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("bool_false eq false"; "bool(false) single-valued attribute with Equal")]
 #[test_case("bool_false ne true"; "bool(false) single-valued attribute with NotEqual")]
 #[test_case("nested_multi_value[first eq \"test-first1\"]"; "ValueFilter with search match")]
+#[test_case("nested_multi_value[first eq \"test-first1\" and not(second eq \"test-second3\")]"; "ValueFilter with search match and logical expression")]
+#[test_case("nested_multi_value[not(first eq \"nonono\")]"; "ValueFilter with search match and sub-filter")]
+#[test_case("number ne 10"; "not equal with number")]
+#[test_case("not (number co 10)"; "contains with number")]
+#[test_case("not (number sw 10)"; "starts with with number")]
+#[test_case("not (number ew 10)"; "ends with with number")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
