@@ -135,26 +135,11 @@ fn match_ok_with_one_resource(filter: &str) {
 #[test_case("multi_simple_value_numbers lt 1"; "simple multi-valued attribute with lessThan")]
 #[test_case("multi_simple_value_numbers le 0"; "simple multi-valued attribute with lessThanEqual")]
 #[test_case("nested_multi_value.first eq \"ZZZZZ\""; "complex multi-valued attribute with eq")]
-fn match_none_with_one_resource(filter: &str) {
-    let resources = example_resources();
-    let res = scim_filter(filter, resources);
-
-    assert_eq!(Vec::<Resource>::new(), res.unwrap());
-}
-
-#[test_case("a eq true"; "equals string with boolean")]
-#[test_case("a gt true"; "greater_than string with boolean")]
-#[test_case("a eq \"2022-01-01T10:10:10Z\""; "equals string with datetime")]
-#[test_case("a eq 19.2"; "equals string with decimal")]
-#[test_case("a eq 11"; "equals string with integer")]
+#[test_case("nested_multi_value.nonExistent eq \"ZZZZZ\""; "nested non-existent multi-valued attribute")]
 #[test_case("bool eq \"test\""; "equals boolean with string")]
 #[test_case("bool eq \"2022-01-01T10:10:10Z\""; "equals boolean with datetime")]
 #[test_case("bool eq 19.2"; "equals boolean with decimal")]
 #[test_case("bool eq 11"; "equals boolean with integer")]
-#[test_case("bool gt true"; "greater_than on bool")]
-#[test_case("bool ge true"; "greater_than_equal on bool")]
-#[test_case("bool lt true"; "less_than on bool")]
-#[test_case("bool le true"; "less_than_equal on bool")]
 #[test_case("datetime eq \"test\""; "equals datetime with string")]
 #[test_case("datetime eq true"; "equals datetime with boolean")]
 #[test_case("datetime eq 19.2"; "equals datetime with decimal")]
@@ -163,6 +148,22 @@ fn match_none_with_one_resource(filter: &str) {
 #[test_case("decimal eq true"; "equals decimal with boolean")]
 #[test_case("decimal eq \"2022-01-01T10:10:10Z\""; "equals decimal with datetime")]
 #[test_case("decimal ew \"test\""; "equals decimal do not work with EndsWith")]
+#[test_case("a eq 19.2"; "equals string with decimal")]
+#[test_case("a eq 11"; "equals string with integer")]
+#[test_case("a eq true"; "equals string with boolean")]
+#[test_case("a eq \"2022-01-01T10:10:10Z\""; "equals string with datetime")]
+fn match_none_with_one_resource(filter: &str) {
+    let resources = example_resources();
+    let res = scim_filter(filter, resources);
+
+    assert_eq!(Vec::<Resource>::new(), res.unwrap());
+}
+
+#[test_case("bool gt true"; "greater_than on bool")]
+#[test_case("bool ge true"; "greater_than_equal on bool")]
+#[test_case("bool lt true"; "less_than on bool")]
+#[test_case("bool le true"; "less_than_equal on bool")]
+#[test_case("a gt true"; "greater_than string with boolean")]
 fn invalid_filter(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);

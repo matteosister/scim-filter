@@ -68,28 +68,43 @@ impl<'a> AttrExpData<'a> {
 
 impl AttrPath {
     pub fn extract_value(&self, resource: &JsonValue) -> JsonValue {
-        let resource_value = &resource[&self.attr_name().0.to_lowercase()];
-        match (resource_value, self.sub_attr()) {
+        let mut resource = resource.clone();
+        let attr_name = self.attr_name().0.to_lowercase();
+        let sub_attr = self.sub_attr().as_ref().map(|sa| sa.0.to_lowercase());
+        resource = match resource {
+            Value::Null => return JsonValue::Null,
+            Value::Bool(_) => return JsonValue::Null,
+            Value::Number(_) => return JsonValue::Null,
+            Value::String(_) => return JsonValue::Null,
+            Value::Array(array_of_values) => array_of_values
+                .iter()
+                .map(|v| &v[&attr_name])
+                .cloned()
+                .collect(),
+            Value::Object(object_value) => object_value
+                .get(&attr_name)
+                .cloned()
+                .unwrap_or(JsonValue::Null),
+        };
+        match (resource.clone(), sub_attr) {
             (JsonValue::Null, None) => JsonValue::Null,
-            (JsonValue::Bool(_), None) => resource_value.clone(),
-            (JsonValue::Number(_), None) => resource_value.clone(),
-            (JsonValue::String(_), None) => resource_value.clone(),
+            (JsonValue::Bool(_), None) => resource.clone(),
+            (JsonValue::Number(_), None) => resource.clone(),
+            (JsonValue::String(_), None) => resource.clone(),
             (
                 JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_),
                 Some(_),
             ) => JsonValue::Null,
-            (JsonValue::Array(_), None) => resource_value.clone(),
+            (JsonValue::Array(_), None) => resource.clone(),
             (JsonValue::Array(array_of_values), Some(sub_attr)) => JsonValue::Array(
                 array_of_values
                     .iter()
-                    .map(|v| &v[&sub_attr.0])
+                    .map(|v| &v[&sub_attr])
                     .cloned()
                     .collect(),
             ),
-            (JsonValue::Object(_), None) => resource_value.clone(),
-            (JsonValue::Object(object_value), Some(sub_attr)) => {
-                object_value[&sub_attr.0.to_lowercase()].clone()
-            }
+            (JsonValue::Object(_), None) => resource.clone(),
+            (JsonValue::Object(object_value), Some(sub_attr)) => object_value[&sub_attr].clone(),
         }
     }
 }
@@ -114,22 +129,33 @@ impl<'a> LogExpData<'a> {
 
 impl<'a> ValuePathData<'a> {
     pub fn r#match(&self, resource: &JsonValue) -> MatcherResult<bool> {
-        self.val_filter().r#match(self.attr_path(), &resource)
+        self.val_filter().r#match(self.attr_path(), resource)
     }
 }
 
 impl<'a> ValFilter<'a> {
     pub fn r#match(&self, attr_path: &AttrPath, resource: &JsonValue) -> MatcherResult<bool> {
-        let mut sub_resource = &resource[&attr_path.attr_name().0];
-        // todo: account for array
+        let mut sub_resource = resource[&attr_path.attr_name().0].clone();
         if let Some(sub_attr) = attr_path.sub_attr() {
-            sub_resource = &sub_resource[&sub_attr.0];
+            sub_resource = match sub_resource {
+                Value::Null => return Ok(false),
+                Value::Bool(_) => return Ok(false),
+                Value::Number(_) => return Ok(false),
+                Value::String(_) => return Ok(false),
+                Value::Array(arr_values) => JsonValue::Array(
+                    arr_values
+                        .iter()
+                        .map(|arr_value| arr_value[&sub_attr.0].clone())
+                        .collect(),
+                ),
+                Value::Object(obj_value) => obj_value[&sub_attr.0].clone(),
+            };
         }
         match self {
-            ValFilter::AttrExp(attr_exp_data) => attr_exp_data.r#match(sub_resource),
-            ValFilter::LogExp(log_exp_data) => log_exp_data.r#match(sub_resource),
+            ValFilter::AttrExp(attr_exp_data) => attr_exp_data.r#match(&sub_resource),
+            ValFilter::LogExp(log_exp_data) => log_exp_data.r#match(&sub_resource),
             ValFilter::SubFilter(is_not, sub_filter) => sub_filter
-                .r#match(attr_path, sub_resource)
+                .r#match(attr_path, &sub_resource)
                 .map(|sub_filter_result| {
                     if *is_not {
                         !sub_filter_result
@@ -200,6 +226,27 @@ impl<'a> CompValue<'a> {
     }
 
     pub fn compare_with(
+        &self,
+        compare_op: &CompareOp,
+        resource_value: &JsonValue,
+    ) -> MatcherResult<bool> {
+        match self.do_compare_with(compare_op, resource_value) {
+            Ok(res) => Ok(res),
+            Err(err) => match compare_op {
+                CompareOp::Equal => Ok(false),
+                CompareOp::NotEqual => Ok(false),
+                CompareOp::Contains => Ok(false),
+                CompareOp::StartsWith => Ok(false),
+                CompareOp::EndsWith => Ok(false),
+                CompareOp::GreaterThan => Err(err),
+                CompareOp::GreaterThanOrEqual => Err(err),
+                CompareOp::LessThan => Err(err),
+                CompareOp::LessThanOrEqual => Err(err),
+            },
+        }
+    }
+
+    pub fn do_compare_with(
         &self,
         compare_op: &CompareOp,
         resource_value: &JsonValue,
