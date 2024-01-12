@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::convert::identity;
 
 use chrono::{DateTime, FixedOffset};
@@ -68,17 +67,17 @@ impl<'a> AttrExpData<'a> {
 }
 
 trait CaseInsensitiveGet {
-    fn get_insensitive(&self, key: &String) -> Option<Value>;
+    fn get_insensitive(&self, key: &String) -> Option<&Value>;
 }
 
 impl CaseInsensitiveGet for Map<String, Value> {
-    fn get_insensitive(&self, key: &String) -> Option<Value> {
-        let object_value_as_tree: BTreeMap<String, Value> = self
-            .into_iter()
-            .map(|(k, value)| (k.to_lowercase(), value.clone()))
-            .collect();
-
-        object_value_as_tree.get(&key.to_lowercase()).cloned()
+    fn get_insensitive(&self, key: &String) -> Option<&Value> {
+        for (value_key, value) in self {
+            if value_key.to_lowercase() == key.to_lowercase() {
+                return Some(value);
+            }
+        }
+        None
     }
 }
 
@@ -99,6 +98,7 @@ impl AttrPath {
                 .collect(),
             Value::Object(object_value) => object_value
                 .get_insensitive(&attr_name)
+                .cloned()
                 .unwrap_or(JsonValue::Null),
         };
         // extracting the final value based on the presence of a sub_attr
@@ -122,6 +122,7 @@ impl AttrPath {
             (JsonValue::Object(_), None) => base_resource.clone(),
             (JsonValue::Object(object_value), Some(sub_attr)) => object_value
                 .get_insensitive(&sub_attr)
+                .cloned()
                 .unwrap_or(JsonValue::Null),
         }
     }
