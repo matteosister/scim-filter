@@ -71,6 +71,7 @@ fn example_resources2() -> Vec<Resource> {
 }
 
 #[test_case("bool eq true"; "one resource do match with equals boolean")]
+#[test_case("bool ne false"; "one resource do match with not equals boolean")]
 #[test_case("a eq \"test1\""; "one resource do match with equals")]
 #[test_case("b co \"est\""; "one resource do match with correct contains")]
 #[test_case("b sw \"te\""; "one resource do match with correct starts with")]
@@ -115,6 +116,9 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("not (number co 10)"; "contains with number")]
 #[test_case("not (number sw 10)"; "starts with with number")]
 #[test_case("not (number ew 10)"; "ends with with number")]
+#[test_case("A eq \"test1\""; "the match should be case insensitive - simple values")]
+#[test_case("multi_simple_VALUE co \"t1\""; "the match should be case insensitive - multi simple values")]
+#[test_case("nested_multi_value.FIRST ew \"first1\""; "the match should be case insensitive - multi complex values")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);
@@ -123,6 +127,7 @@ fn match_ok_with_one_resource(filter: &str) {
 }
 
 #[test_case("a eq \"no-match\""; "one resource do not match with wrong equals")]
+#[test_case("a.test eq \"no-match\""; "one resource do not match with non-present sub attributes")]
 #[test_case("b co \"zest\""; "one resource do not match with wrong contains")]
 #[test_case("b sw \"ze\""; "one resource do not match with wrong starts with")]
 #[test_case("c ew \"stX\""; "one resource do not match with wrong ends with")]
