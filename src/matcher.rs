@@ -84,10 +84,10 @@ impl CaseInsensitiveGet for Map<String, Value> {
 
 impl AttrPath {
     pub fn extract_value(&self, resource: &JsonValue) -> JsonValue {
-        let mut resource = resource.clone();
         let attr_name = self.attr_name().0.to_lowercase();
         let sub_attr = self.sub_attr().as_ref().map(|sa| sa.0.to_lowercase());
-        resource = match resource {
+        // I do the check in two steps, so first I extract the base resource, that correspond to the attribute name in the expression
+        let base_resource = match resource {
             Value::Null => return JsonValue::Null,
             Value::Bool(_) => return JsonValue::Null,
             Value::Number(_) => return JsonValue::Null,
@@ -101,16 +101,17 @@ impl AttrPath {
                 .get_insensitive(&attr_name)
                 .unwrap_or(JsonValue::Null),
         };
-        match (resource.clone(), sub_attr) {
+        // extracting the final value based on the presence of a sub_attr
+        match (base_resource.clone(), sub_attr) {
             (JsonValue::Null, None) => JsonValue::Null,
-            (JsonValue::Bool(_), None) => resource.clone(),
-            (JsonValue::Number(_), None) => resource.clone(),
-            (JsonValue::String(_), None) => resource.clone(),
+            (JsonValue::Bool(_), None) => base_resource.clone(),
+            (JsonValue::Number(_), None) => base_resource.clone(),
+            (JsonValue::String(_), None) => base_resource.clone(),
             (
                 JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_),
                 Some(_),
             ) => JsonValue::Null,
-            (JsonValue::Array(_), None) => resource.clone(),
+            (JsonValue::Array(_), None) => base_resource.clone(),
             (JsonValue::Array(array_of_values), Some(sub_attr)) => JsonValue::Array(
                 array_of_values
                     .iter()
@@ -118,7 +119,7 @@ impl AttrPath {
                     .cloned()
                     .collect(),
             ),
-            (JsonValue::Object(_), None) => resource.clone(),
+            (JsonValue::Object(_), None) => base_resource.clone(),
             (JsonValue::Object(object_value), Some(sub_attr)) => object_value
                 .get_insensitive(&sub_attr)
                 .unwrap_or(JsonValue::Null),
@@ -315,7 +316,7 @@ impl<'a> CompValue<'a> {
                             .as_number()
                             .ok_or_else(|| Error::MalformedNumber(value.to_string()))
                             .and_then(|number| {
-                                Self::to_decimal_number(number)
+                                Self::convert_number_to_decimal(number)
                                     .ok_or_else(|| Error::MalformedNumber(number.to_string()))
                             })
                             .and_then(|value| {
@@ -326,12 +327,12 @@ impl<'a> CompValue<'a> {
                             })
                     })
                     .map(|results| results.into_iter().any(identity)),
-                JsonValue::Number(number_value) => Self::to_decimal_number(number_value)
+                JsonValue::Number(number_value) => Self::convert_number_to_decimal(number_value)
                     .ok_or_else(|| Error::MalformedNumber(number_value.to_string()))
                     .and_then(|resource_value_as_decimal| {
                         Self::compare_number(&resource_value_as_decimal, compare_op, comp_value)
                     }),
-                JsonValue::String(str_value) => Self::to_decimal_string(str_value)
+                JsonValue::String(str_value) => Self::convert_str_to_decimal(str_value)
                     .ok_or_else(|| Error::MalformedString(str_value.to_string()))
                     .and_then(|resource_value_as_decimal| {
                         Self::compare_number(&resource_value_as_decimal, compare_op, comp_value)
@@ -340,14 +341,16 @@ impl<'a> CompValue<'a> {
             },
             CompValue::String(comp_value) => {
                 // attempt to match the string as a datetime
-                if let Some(datetime) = Self::to_datetime(comp_value) {
+                if let Some(datetime) = Self::convert_str_to_datetime(comp_value) {
                     return match resource_value {
-                        Value::String(str_value) => match Self::to_datetime(str_value) {
-                            None => Err(Error::MalformedDatetime(str_value.to_string())),
-                            Some(value_datetime) => {
-                                Self::compare_datetime(&value_datetime, compare_op, &datetime)
+                        Value::String(str_value) => {
+                            match Self::convert_str_to_datetime(str_value) {
+                                None => Err(Error::MalformedDatetime(str_value.to_string())),
+                                Some(value_datetime) => {
+                                    Self::compare_datetime(&value_datetime, compare_op, &datetime)
+                                }
                             }
-                        },
+                        }
                         value => Err(Error::MalformedNumber(value.to_string())),
                     };
                 }
@@ -366,11 +369,11 @@ impl<'a> CompValue<'a> {
                         })
                         .map(|results| results.into_iter().any(identity)),
                     JsonValue::String(val_string) => {
-                        if Self::to_datetime(val_string).is_some() {
+                        if Self::convert_str_to_datetime(val_string).is_some() {
                             // the resource value is a date. Since the comparison value is not, this is an error.
                             return Err(Error::MalformedDatetime(comp_value.to_string()));
                         }
-                        if Self::to_decimal_string(val_string).is_some() {
+                        if Self::convert_str_to_decimal(val_string).is_some() {
                             // the resource value is a date. Since the comparison value is not, this is an error.
                             return Err(Error::MalformedNumber(comp_value.to_string()));
                         }
@@ -400,7 +403,7 @@ impl<'a> CompValue<'a> {
         }
     }
 
-    fn to_decimal_number(n: &Number) -> Option<Decimal> {
+    fn convert_number_to_decimal(n: &Number) -> Option<Decimal> {
         if let Some(value_i64) = n.as_i64() {
             return Decimal::from_i64(value_i64);
         }
@@ -414,11 +417,11 @@ impl<'a> CompValue<'a> {
         None
     }
 
-    fn to_decimal_string(n: &str) -> Option<Decimal> {
+    fn convert_str_to_decimal(n: &str) -> Option<Decimal> {
         Decimal::from_str_exact(n).ok()
     }
 
-    fn to_datetime(str_date: &str) -> Option<DateTime<FixedOffset>> {
+    fn convert_str_to_datetime(str_date: &str) -> Option<DateTime<FixedOffset>> {
         chrono::DateTime::parse_from_rfc3339(str_date).ok()
     }
 }
