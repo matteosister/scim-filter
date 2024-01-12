@@ -115,6 +115,9 @@ fn example_resources2() -> Vec<Resource> {
 #[test_case("not (number co 10)"; "contains with number")]
 #[test_case("not (number sw 10)"; "starts with with number")]
 #[test_case("not (number ew 10)"; "ends with with number")]
+#[test_case("A eq \"test1\""; "the match should be case insensitive - simple values")]
+#[test_case("multi_simple_VALUE co \"t1\""; "the match should be case insensitive - multi simple values")]
+#[test_case("nested_multi_value.FIRST ew \"first1\""; "the match should be case insensitive - multi complex values")]
 fn match_ok_with_one_resource(filter: &str) {
     let resources = example_resources();
     let res = scim_filter(filter, resources);

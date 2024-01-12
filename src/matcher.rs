@@ -1,10 +1,11 @@
+use std::collections::BTreeMap;
 use std::convert::identity;
 
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::{Number, Value as JsonValue, Value};
+use serde_json::{Map, Number, Value as JsonValue, Value};
 
 use crate::error::Error;
 use crate::parser::{
@@ -66,6 +67,21 @@ impl<'a> AttrExpData<'a> {
     }
 }
 
+trait CaseInsensitiveGet {
+    fn get_insensitive(&self, key: &String) -> Option<Value>;
+}
+
+impl CaseInsensitiveGet for Map<String, Value> {
+    fn get_insensitive(&self, key: &String) -> Option<Value> {
+        let object_value_as_tree: BTreeMap<String, Value> = self
+            .into_iter()
+            .map(|(k, value)| (k.to_lowercase(), value.clone()))
+            .collect();
+
+        object_value_as_tree.get(&key.to_lowercase()).cloned()
+    }
+}
+
 impl AttrPath {
     pub fn extract_value(&self, resource: &JsonValue) -> JsonValue {
         let mut resource = resource.clone();
@@ -78,12 +94,11 @@ impl AttrPath {
             Value::String(_) => return JsonValue::Null,
             Value::Array(array_of_values) => array_of_values
                 .iter()
-                .map(|v| &v[&attr_name])
+                .filter_map(|v| v.get(&attr_name))
                 .cloned()
                 .collect(),
             Value::Object(object_value) => object_value
-                .get(&attr_name)
-                .cloned()
+                .get_insensitive(&attr_name)
                 .unwrap_or(JsonValue::Null),
         };
         match (resource.clone(), sub_attr) {
@@ -99,12 +114,14 @@ impl AttrPath {
             (JsonValue::Array(array_of_values), Some(sub_attr)) => JsonValue::Array(
                 array_of_values
                     .iter()
-                    .map(|v| &v[&sub_attr])
+                    .filter_map(|v| v.get(&sub_attr))
                     .cloned()
                     .collect(),
             ),
             (JsonValue::Object(_), None) => resource.clone(),
-            (JsonValue::Object(object_value), Some(sub_attr)) => object_value[&sub_attr].clone(),
+            (JsonValue::Object(object_value), Some(sub_attr)) => object_value
+                .get_insensitive(&sub_attr)
+                .unwrap_or(JsonValue::Null),
         }
     }
 }
